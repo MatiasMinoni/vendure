@@ -2375,6 +2375,54 @@ describe('Collection resolver', () => {
         });
     });
 
+    // https://github.com/vendurehq/vendure/issues/5415
+    it('AND-ed variantName filters can match different translations of a variant', async () => {
+        adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+        const hardDriveVariantIds = ['T_11', 'T_12', 'T_13', 'T_14', 'T_15'];
+        await adminClient.query(updateProductVariantsDocument, {
+            input: hardDriveVariantIds.map(id => ({
+                id,
+                translations: [{ languageCode: LanguageCode.de, name: `Festplatte ${id}` }],
+            })),
+        });
+
+        const { createCollection } = await adminClient.query(createCollectionDocument, {
+            input: {
+                translations: [
+                    {
+                        languageCode: LanguageCode.en,
+                        name: 'drive and festplatte',
+                        description: '',
+                        slug: 'drive-and-festplatte',
+                    },
+                ],
+                filters: [
+                    {
+                        code: variantNameCollectionFilter.code,
+                        arguments: [
+                            { name: 'operator', value: 'contains' },
+                            { name: 'term', value: 'drive' },
+                        ],
+                    },
+                    {
+                        code: variantNameCollectionFilter.code,
+                        arguments: [
+                            { name: 'operator', value: 'contains' },
+                            { name: 'term', value: 'festplatte' },
+                        ],
+                    },
+                ],
+            },
+        });
+        await awaitRunningJobs(adminClient, 5000);
+
+        const result = await adminClient.query(getCollectionProductVariantsDocument, {
+            id: createCollection.id,
+        });
+        collectionResultGuard.assertSuccess(result.collection);
+        expect(result.collection.productVariants.items.map(i => i.id).sort()).toEqual(hardDriveVariantIds);
+    });
+
     function getFacetValueId(code: string): string {
         const match = facetValues.find(fv => fv.code === code);
         if (!match) {
