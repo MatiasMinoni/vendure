@@ -299,7 +299,8 @@ function isPersisted(entry: any): boolean {
 /**
  * @description
  * Merges `setValuesForCreate` values into the form's default values. Objects such as `customFields`
- * are merged key by key. Everything else, including arrays, replaces the default.
+ * are merged key by key, and each translation row is merged onto the default translation row.
+ * Everything else, including other arrays, replaces the default.
  */
 export function mergeStartingValues<T extends Record<string, any>>(
     defaults: T,
@@ -307,8 +308,13 @@ export function mergeStartingValues<T extends Record<string, any>>(
 ): T {
     const result: Record<string, any> = { ...defaults };
     for (const [key, value] of Object.entries(startingValues)) {
-        result[key] =
-            isObject(value) && isObject(result[key]) ? mergeStartingValues(result[key], value) : value;
+        if (key === 'translations' && Array.isArray(value)) {
+            const defaultRow = defaults.translations?.[0] ?? {};
+            result[key] = value.map(row => mergeStartingValues(defaultRow, row));
+        } else {
+            result[key] =
+                isObject(value) && isObject(result[key]) ? mergeStartingValues(result[key], value) : value;
+        }
     }
     return result as T;
 }

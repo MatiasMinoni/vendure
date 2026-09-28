@@ -317,6 +317,25 @@ describe('mergeStartingValues', () => {
         expect(result.facetValueIds).toEqual(['1', '2']);
     });
 
+    it('merges each translation row onto the default translation row', () => {
+        const withCustomFields = {
+            translations: [
+                { languageCode: 'en', name: '', slug: '', customFields: { subtitle: '', isFeatured: false } },
+            ],
+        };
+        const startingRow = { languageCode: 'de', name: 'Name', customFields: { subtitle: 'Subtitle' } };
+        const result = mergeStartingValues(withCustomFields, { translations: [startingRow] });
+        expect(result.translations).toEqual([
+            {
+                languageCode: 'de',
+                name: 'Name',
+                slug: '',
+                customFields: { subtitle: 'Subtitle', isFeatured: false },
+            },
+        ]);
+        expect(result.translations[0]).not.toBe(startingRow);
+    });
+
     it('lets an explicit null replace the default', () => {
         const result = mergeStartingValues(defaults(), { customFields: { isDownloadable: null } });
         expect(result.customFields.isDownloadable).toBeNull();
