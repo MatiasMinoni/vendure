@@ -110,15 +110,18 @@ export interface DetailPageOptions<
      * @description
      * The function to set the starting values for the create form, e.g. a parent ID from the
      * route params. They are merged into the default values, so the form opens with no unsaved changes.
+     * It receives the route params and runs again only when they change.
      *
      * @example
      * ```ts
-     * setValuesForCreate: () => ({ companyId: params.companyId }),
+     * setValuesForCreate: params => ({ companyId: params.companyId }),
      * ```
      *
      * @since 3.8.0
      */
-    setValuesForCreate?: () => WithLooseCustomFields<Partial<VariablesOf<C>[VarNameCreate]>>;
+    setValuesForCreate?: NoInfer<
+        (params: Record<string, string>) => WithLooseCustomFields<Partial<VariablesOf<C>[VarNameCreate]>>
+    >;
     transformCreateInput?: (input: VariablesOf<C>[VarNameCreate]) => VariablesOf<C>[VarNameCreate];
     /**
      * @description
@@ -366,7 +369,10 @@ export function useDetailPage<
     const routeParams = useParams({ strict: false });
     // Rerun only when the route params change. Rerunning every render would reset the form
     // whenever the values include something like `new Date()`.
-    const startingValues = useMemo(() => (isNew ? setValuesForCreate?.() : undefined), [isNew, routeParams]);
+    const startingValues = useMemo(
+        () => (isNew ? setValuesForCreate?.(routeParams) : undefined),
+        [isNew, routeParams],
+    );
 
     const createMutation = useMutation({
         mutationFn: createDocument ? api.mutate(createDocument) : undefined,

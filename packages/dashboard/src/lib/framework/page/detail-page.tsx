@@ -84,11 +84,12 @@ export interface DetailPageProps<
     setValuesForUpdate: (entity: ResultOf<T>[EntityField]) => VariablesOf<U>['input'];
     /**
      * @description
-     * A function that sets the starting values for the form when creating a new entity.
+     * A function that sets the starting values for the form when creating a new entity, based on
+     * the route params.
      *
      * @since 3.8.0
      */
-    setValuesForCreate?: () => Partial<VariablesOf<C>['input']>;
+    setValuesForCreate?: NoInfer<(params: Record<string, string>) => Partial<VariablesOf<C>['input']>>;
 }
 
 export interface DetailPageFieldProps<

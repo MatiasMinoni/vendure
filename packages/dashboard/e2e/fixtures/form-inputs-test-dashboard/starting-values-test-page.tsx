@@ -76,16 +76,16 @@ export function StartingValuesTestPage({ route }: { route: AnyRoute }) {
             })),
             customFields: (product as any).customFields,
         }),
-        setValuesForCreate: () => ({
+        setValuesForCreate: ({ preset }) => ({
             translations: [
                 {
                     languageCode: 'en',
-                    name: `Prefilled ${params.preset}`,
-                    slug: `prefilled-${params.preset}`,
+                    name: `Prefilled ${preset}`,
+                    slug: `prefilled-${preset}`,
                 },
             ],
             customFields: {
-                infoUrl: `https://example.com/${params.preset}`,
+                infoUrl: `https://example.com/${preset}`,
                 // Changes on every call, to check that the form is not reset on each render.
                 additionalInfo: `Opened at ${Date.now()}`,
             },
