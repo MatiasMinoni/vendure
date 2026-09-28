@@ -211,8 +211,8 @@ export function stripNullNullableFields<T extends Record<string, any>>(values: T
  * fallback — a lookup for that language finds the empty row instead of falling back to the default
  * language — most visibly in the search index, which shows an empty name. See #4885 / OSS-579.
  *
- * A row is kept when it is **dirty OR persisted OR a starting value**, and dropped otherwise.
- * The predicates are complementary, each covering what the others are blind to:
+ * A row is kept when it is **dirty OR persisted**, and dropped otherwise. The two predicates are
+ * complementary, each covering what the other is blind to:
  *
  * - `dirty` (from react-hook-form's `dirtyFields`) carries the **create** path: no row has an `id`
  *   yet, so a seeded row never typed into is not dirty and is dropped, while a filled one is kept.
@@ -220,8 +220,6 @@ export function stripNullNullableFields<T extends Record<string, any>>(values: T
  *   prop resets the form and promotes the entity to `defaultValues`, so on an update nothing is
  *   dirty until the user types — an untouched persisted row and an untouched seeded row look
  *   identical to dirty state, and only the `id` separates them.
- * - `startingTranslations` covers a row filled in by `setValuesForCreate`. It is never dirty but
- *   must be saved. Rows are matched by `languageCode`.
  *
  * Crucially there is no value inspection anywhere, so an untouched row seeded with a filled-looking
  * default (`Boolean` → `false`, `Int`/`Money` → `0`, enum → first member) is still correctly
@@ -237,7 +235,6 @@ export function stripUntouchedTranslations<T extends Record<string, any>>(
     values: T,
     fields: FieldInfo[],
     dirtyFields: any,
-    startingTranslations?: Array<{ languageCode: string }>,
 ): T {
     if (!values) {
         return values;
@@ -254,12 +251,7 @@ export function stripUntouchedTranslations<T extends Record<string, any>>(
             if (Array.isArray(value)) {
                 const isTranslationsArray = field.typeInfo.some(f => f.name === 'languageCode');
                 if (isTranslationsArray) {
-                    const kept = value.filter(
-                        (entry, i) =>
-                            isDirty(dirtyValue?.[i]) ||
-                            isPersisted(entry) ||
-                            !!startingTranslations?.some(row => row.languageCode === entry.languageCode),
-                    );
+                    const kept = value.filter((entry, i) => isDirty(dirtyValue?.[i]) || isPersisted(entry));
                     // Never strip every row: a fully-empty form (a non-nullable `String` maps to a
                     // bare `z.string()`, so a blank create passes validation) would otherwise submit
                     // `translations: []`. Leave the input untouched and let validation surface the
@@ -299,7 +291,8 @@ function isPersisted(entry: any): boolean {
 /**
  * @description
  * Merges `setValuesForCreate` values into the form's default values. Objects such as `customFields`
- * are merged key by key, and each translation row is merged onto the default translation row.
+ * are merged key by key. Each translation row is merged onto the default row of the same language,
+ * and a row for a language with no default row is merged onto the first default row and added last.
  * Everything else, including other arrays, replaces the default.
  */
 export function mergeStartingValues<T extends Record<string, any>>(
@@ -309,8 +302,20 @@ export function mergeStartingValues<T extends Record<string, any>>(
     const result: Record<string, any> = { ...defaults };
     for (const [key, value] of Object.entries(startingValues)) {
         if (key === 'translations' && Array.isArray(value)) {
-            const defaultRow = defaults.translations?.[0] ?? {};
-            result[key] = value.map(row => mergeStartingValues(defaultRow, row));
+            // react-hook-form compares rows by position, so each row must keep its default position.
+            const defaultRows: Array<Record<string, any>> = defaults.translations ?? [];
+            const startingRowFor = (languageCode: string) =>
+                value.find(row => row.languageCode === languageCode);
+            const otherRows = value.filter(
+                row => !defaultRows.some(d => d.languageCode === row.languageCode),
+            );
+            result[key] = [
+                ...defaultRows.map(row => {
+                    const startingRow = startingRowFor(row.languageCode);
+                    return startingRow ? mergeStartingValues(row, startingRow) : row;
+                }),
+                ...otherRows.map(row => mergeStartingValues(defaultRows[0] ?? {}, row)),
+            ];
         } else {
             result[key] =
                 isObject(value) && isObject(result[key]) ? mergeStartingValues(result[key], value) : value;

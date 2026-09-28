@@ -114,8 +114,9 @@ export interface GeneratedFormOptions<
     >;
     /**
      * @description
-     * The starting values to merge into the default values when there is no entity. The form resets
-     * whenever they change, so values such as `new Date()` should not be recreated on every render.
+     * The starting values to apply on top of the default values when there is no entity. They count as
+     * unsaved changes. The form resets whenever they change, so values such as `new Date()` should not
+     * be recreated on every render.
      *
      * @since 3.8.0
      */
@@ -229,11 +230,12 @@ export function useGeneratedForm<
         () => ensureTranslationsForAllLanguages(entity, availableLanguages, defaultValues),
         [entity, availableLanguages, defaultValues],
     );
-    // Also used as `values` on create, so the form opens with no unsaved changes.
-    const processedDefaultValues = useMemo(() => {
-        const merged = startingValues ? mergeStartingValues(defaultValues, startingValues) : defaultValues;
-        return ensureTranslationsForAllLanguages(merged, availableLanguages, defaultValues) ?? merged;
-    }, [defaultValues, startingValues, availableLanguages]);
+    const processedDefaultValues = useMemo(
+        () =>
+            ensureTranslationsForAllLanguages(defaultValues, availableLanguages, defaultValues) ??
+            defaultValues,
+        [defaultValues, availableLanguages],
+    );
 
     const values = useMemo(() => {
         const raw = processedEntity
@@ -241,6 +243,10 @@ export function useGeneratedForm<
             : processedDefaultValues;
         return applyNullableSelectCustomFieldDefaults(raw, customFieldConfig);
     }, [processedEntity, processedDefaultValues, updateFields, customFieldConfig]);
+    const startingFormValues = useMemo(
+        () => (startingValues ? mergeStartingValues(values, startingValues) : undefined),
+        [values, startingValues],
+    );
 
     const form = useForm({
         resolver: async (values, context, options) => {
@@ -252,7 +258,10 @@ export function useGeneratedForm<
         },
         mode: 'onChange',
         defaultValues: processedDefaultValues,
-        values,
+        values: startingFormValues ?? values,
+        // Keep the defaults as the baseline, so the starting values count as unsaved changes and the
+        // page's submit button is enabled.
+        resetOptions: { keepDefaultValues: !!startingFormValues },
     });
     // Read `dirtyFields` here, during render, so react-hook-form's lazily-tracked `formState`
     // Proxy actually populates it. If it were only read inside the submit handler it could come
@@ -282,12 +291,7 @@ export function useGeneratedForm<
                 );
                 // Drop translation rows the form seeded for languages the user never filled,
                 // so we don't persist empty translations that break language fallback (#4885).
-                processed = stripUntouchedTranslations(
-                    processed,
-                    updateFields,
-                    dirtyFields,
-                    startingValues?.translations,
-                );
+                processed = stripUntouchedTranslations(processed, updateFields, dirtyFields);
                 if (!entity) {
                     processed = stripNullNullableFields(processed, updateFields);
                 }

@@ -241,20 +241,9 @@ test.describe('Detail page starting values (setValuesForCreate)', () => {
         await expect(textbox(page, 'Additional Info')).toHaveValue(additionalInfo);
     });
 
-    test('opens clean, so leaving the page does not ask to discard changes', async ({ page }) => {
+    test('counts the starting values as unsaved changes', async ({ page }) => {
         await page.goto('/starting-values-test/first/new');
         await expect(textbox(page, 'Name')).toHaveValue('Prefilled first');
-        await expect(page.getByRole('button', { name: 'Create', exact: true })).toBeDisabled();
-
-        await page.getByRole('link', { name: 'Leave page' }).click();
-        await expect(page.getByText('Form Inputs Test')).toBeVisible();
-        await expect(page.getByText('Confirm navigation')).not.toBeVisible();
-    });
-
-    // Checks the prompt does appear here, which makes the previous test meaningful.
-    test('asks to discard changes when leaving after the user edits a field', async ({ page }) => {
-        await page.goto('/starting-values-test/first/new');
-        await textbox(page, 'Description').fill('Typed by the user');
         await expect(page.getByRole('button', { name: 'Create', exact: true })).toBeEnabled();
 
         await page.getByRole('link', { name: 'Leave page' }).click();
@@ -267,6 +256,7 @@ test.describe('Detail page starting values (setValuesForCreate)', () => {
         await expect(textbox(page, 'Name')).toHaveValue('Prefilled first');
 
         await page.getByRole('link', { name: 'Open create page with preset "other"' }).click();
+        await page.getByRole('button', { name: 'Confirm', exact: true }).click();
         await expect(page).toHaveURL(/\/starting-values-test\/other\/new$/);
         await expect(textbox(page, 'Name')).toHaveValue('Prefilled other');
         await expect(textbox(page, 'Info URL')).toHaveValue('https://example.com/other');
@@ -295,9 +285,9 @@ test.describe('Detail page starting values (setValuesForCreate)', () => {
         await expect(textbox(page, 'Info URL')).not.toHaveValue('https://example.com/first');
     });
 
-    test('shows the starting values on a DetailPage create page', async ({ page }) => {
+    test('enables the button on a DetailPage create page filled by starting values', async ({ page }) => {
         await page.goto('/starting-values-detail-page-test/first/new');
         await expect(textbox(page, 'name')).toHaveValue('Prefilled first');
-        await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeDisabled();
+        await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
     });
 });
