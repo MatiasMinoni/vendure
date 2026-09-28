@@ -234,10 +234,11 @@ test.describe('Detail page starting values (setValuesForCreate)', () => {
     // The starting values include `Date.now()`, so they change on every call.
     test('keeps what the user types when the starting values differ on each call', async ({ page }) => {
         await page.goto('/starting-values-test/first/new');
+        const additionalInfo = await textbox(page, 'Additional Info').inputValue();
         await textbox(page, 'Description').fill('Typed by the user');
         await textbox(page, 'Slug').click();
-        await page.waitForTimeout(500);
         await expect(textbox(page, 'Description')).toHaveValue('Typed by the user');
+        await expect(textbox(page, 'Additional Info')).toHaveValue(additionalInfo);
     });
 
     test('opens clean, so leaving the page does not ask to discard changes', async ({ page }) => {
@@ -291,5 +292,12 @@ test.describe('Detail page starting values (setValuesForCreate)', () => {
         await page.goto('/starting-values-test/first/1');
         await expect(textbox(page, 'Name')).toHaveValue('Laptop');
         await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeVisible();
+        await expect(textbox(page, 'Info URL')).not.toHaveValue('https://example.com/first');
+    });
+
+    test('shows the starting values on a DetailPage create page', async ({ page }) => {
+        await page.goto('/starting-values-detail-page-test/first/new');
+        await expect(textbox(page, 'name')).toHaveValue('Prefilled first');
+        await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeDisabled();
     });
 });

@@ -1,7 +1,7 @@
 import { defineDashboardExtension } from '@vendure/dashboard';
 
 import { FormInputsTestPage } from './form-inputs-test-page';
-import { StartingValuesTestPage } from './starting-values-test-page';
+import { StartingValuesDetailPage, StartingValuesTestPage } from './starting-values-test-page';
 
 defineDashboardExtension({
     routes: [
@@ -12,6 +12,10 @@ defineDashboardExtension({
         {
             path: '/starting-values-test/$preset/$id',
             component: route => <StartingValuesTestPage route={route} />,
+        },
+        {
+            path: '/starting-values-detail-page-test/$preset/$id',
+            component: route => <StartingValuesDetailPage route={route} />,
         },
     ],
 });

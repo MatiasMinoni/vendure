@@ -6,6 +6,7 @@ import {
     Button,
     CustomFieldsPageBlock,
     DetailFormGrid,
+    DetailPage,
     graphql,
     Input,
     Link,
@@ -140,5 +141,22 @@ export function StartingValuesTestPage({ route }: { route: AnyRoute }) {
                 <CustomFieldsPageBlock column="main" entityType="Product" control={form.control} />
             </PageLayout>
         </Page>
+    );
+}
+
+export function StartingValuesDetailPage({ route }: { route: AnyRoute }) {
+    return (
+        <DetailPage
+            pageId="starting-values-detail-page-test"
+            route={route}
+            title={product => product?.name ?? 'New product'}
+            queryDocument={productDocument}
+            createDocument={createProductDocument}
+            updateDocument={updateProductDocument}
+            setValuesForUpdate={product => ({ id: product?.id ?? '' })}
+            setValuesForCreate={({ preset }) => ({
+                translations: [{ languageCode: 'en', name: `Prefilled ${preset}` }],
+            })}
+        />
     );
 }
