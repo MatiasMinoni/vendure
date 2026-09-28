@@ -109,7 +109,9 @@ export interface DetailPageOptions<
     /**
      * @description
      * The function to set the starting values for the create form, e.g. a parent ID from the
-     * route params. It runs again only when the route params change.
+     * route params. It runs again only when the route params change. The starting values count as
+     * unsaved changes, so a submit button disabled on `!form.formState.isDirty` is enabled, and leaving
+     * the page asks the user to confirm.
      *
      * @example
      * ```ts

@@ -85,7 +85,8 @@ export interface DetailPageProps<
     /**
      * @description
      * A function that sets the starting values for the form when creating a new entity, based on
-     * the route params. It runs again only when the route params change.
+     * the route params. It runs again only when the route params change. The starting values count
+     * as unsaved changes, so the submit button is enabled and leaving the page asks the user to confirm.
      *
      * @since 3.8.0
      */
