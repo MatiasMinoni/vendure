@@ -85,7 +85,7 @@ export interface DetailPageProps<
     /**
      * @description
      * A function that sets the starting values for the form when creating a new entity, based on
-     * the route params.
+     * the route params. It runs again only when the route params change.
      *
      * @since 3.8.0
      */

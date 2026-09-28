@@ -109,8 +109,7 @@ export interface DetailPageOptions<
     /**
      * @description
      * The function to set the starting values for the create form, e.g. a parent ID from the
-     * route params. They are merged into the default values, so the form opens with no unsaved changes.
-     * It receives the route params and runs again only when they change.
+     * route params. It runs again only when the route params change.
      *
      * @example
      * ```ts
