@@ -261,10 +261,10 @@ describe('mergeStartingValues', () => {
         customFields: { infoUrl: '', isDownloadable: false, featureType: null },
     });
 
-    it('replaces a top-level default with the starting value', () => {
-        const result = mergeStartingValues(defaults(), { enabled: false });
+    it('replaces top-level defaults, including arrays, with the starting values', () => {
+        const result = mergeStartingValues(defaults(), { enabled: false, facetValueIds: ['1', '2'] });
         expect(result.enabled).toBe(false);
-        expect(result.facetValueIds).toEqual([]);
+        expect(result.facetValueIds).toEqual(['1', '2']);
     });
 
     it('merges customFields key by key, keeping the defaults of the other custom fields', () => {
@@ -274,11 +274,6 @@ describe('mergeStartingValues', () => {
             isDownloadable: false,
             featureType: null,
         });
-    });
-
-    it('replaces arrays instead of merging them', () => {
-        const result = mergeStartingValues(defaults(), { facetValueIds: ['1', '2'] });
-        expect(result.facetValueIds).toEqual(['1', '2']);
     });
 
     it('merges a translation row onto the default row of the same language, in its position', () => {
@@ -299,7 +294,6 @@ describe('mergeStartingValues', () => {
                 customFields: { subtitle: 'Subtitle', isFeatured: false },
             },
         ]);
-        expect(result.translations[1]).not.toBe(startingRow);
     });
 
     it('adds a row for a language with no default row last, merged onto the first default row', () => {

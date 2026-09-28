@@ -304,14 +304,12 @@ export function mergeStartingValues<T extends Record<string, any>>(
         if (key === 'translations' && Array.isArray(value)) {
             // react-hook-form compares rows by position, so each row must keep its default position.
             const defaultRows: Array<Record<string, any>> = defaults.translations ?? [];
-            const startingRowFor = (languageCode: string) =>
-                value.find(row => row.languageCode === languageCode);
             const otherRows = value.filter(
                 row => !defaultRows.some(d => d.languageCode === row.languageCode),
             );
             result[key] = [
                 ...defaultRows.map(row => {
-                    const startingRow = startingRowFor(row.languageCode);
+                    const startingRow = value.find(r => r.languageCode === row.languageCode);
                     return startingRow ? mergeStartingValues(row, startingRow) : row;
                 }),
                 ...otherRows.map(row => mergeStartingValues(defaultRows[0] ?? {}, row)),

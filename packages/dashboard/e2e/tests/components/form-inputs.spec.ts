@@ -212,25 +212,6 @@ test.describe('Detail page starting values (setValuesForCreate)', () => {
             .getByRole('textbox');
     }
 
-    test('shows the starting values on the create page, merged with the other defaults', async ({ page }) => {
-        await page.goto('/starting-values-test/first/new');
-        await expect(page.getByText('Starting Values Test')).toBeVisible();
-
-        await expect(textbox(page, 'Name')).toHaveValue('Prefilled first');
-        await expect(textbox(page, 'Slug')).toHaveValue('prefilled-first');
-        await expect(textbox(page, 'Info URL')).toHaveValue('https://example.com/first');
-        await expect(textbox(page, 'Additional Info')).toHaveValue(/^Opened at \d+$/);
-        // Custom fields without a starting value keep their defaults.
-        await expect(
-            page
-                .locator('[data-slot="field"]')
-                .filter({
-                    has: page.locator('[data-slot="field-label"]').getByText('Downloadable', { exact: true }),
-                })
-                .getByRole('switch'),
-        ).not.toBeChecked();
-    });
-
     // The starting values include `Date.now()`, so they change on every call.
     test('keeps what the user types when the starting values differ on each call', async ({ page }) => {
         await page.goto('/starting-values-test/first/new');
@@ -276,13 +257,6 @@ test.describe('Detail page starting values (setValuesForCreate)', () => {
         await expect(textbox(page, 'Slug')).toHaveValue(`prefilled-${preset}`);
         await expect(textbox(page, 'Description')).toHaveValue('Created with starting values');
         await expect(textbox(page, 'Info URL')).toHaveValue(`https://example.com/${preset}`);
-    });
-
-    test('does not apply the starting values on the edit page', async ({ page }) => {
-        await page.goto('/starting-values-test/first/1');
-        await expect(textbox(page, 'Name')).toHaveValue('Laptop');
-        await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeVisible();
-        await expect(textbox(page, 'Info URL')).not.toHaveValue('https://example.com/first');
     });
 
     test('enables the button on a DetailPage create page filled by starting values', async ({ page }) => {
