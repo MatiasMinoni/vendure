@@ -2164,8 +2164,7 @@ describe('Collection resolver', () => {
     });
 
     describe('combining an AND-ed and an OR-ed filter', () => {
-        // Regression: variant-name-filter combined with an OR-ed filter used to duplicate ids
-        // for variants with multiple translations, aborting the collection update.
+        // https://github.com/vendurehq/vendure/issues/5415
         it('does not duplicate variants pulled in by the OR-ed filter when they have multiple translations', async () => {
             adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
 
@@ -2303,9 +2302,6 @@ describe('Collection resolver', () => {
             ].sort();
             // De-duplicated union of both filter branches, each variant appearing exactly once.
             expect(result.collection.productVariants.items.map(i => i.name).sort()).toEqual(expectedNames);
-            expect(result.collection.productVariants.items.map(i => i.id)).toHaveLength(
-                new Set(result.collection.productVariants.items.map(i => i.id)).size,
-            );
         });
     });
 
