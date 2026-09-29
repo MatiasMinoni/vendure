@@ -618,11 +618,8 @@ export function ListPage<
     // every visit, so the defaults apply over it.
     const savedColumnFilters = tableSettings?.columnFilters;
     const savedColumnFiltersApply = tableSettings?.columnFiltersConfigured || !!savedColumnFilters?.length;
-    const columnFilters = pageId
-        ? savedColumnFiltersApply
-            ? savedColumnFilters
-            : defaultColumnFilters
-        : routeSearch.filters;
+    const pageColumnFilters = savedColumnFiltersApply ? savedColumnFilters : defaultColumnFilters;
+    const columnFilters = pageId ? pageColumnFilters : routeSearch.filters;
 
     // The DataTable reads `columnFilters` only on mount, so wait for the server-side settings
     // before mounting a table whose defaults they may override.
