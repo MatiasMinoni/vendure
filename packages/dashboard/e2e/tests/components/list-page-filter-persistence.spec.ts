@@ -152,3 +152,86 @@ test.describe('List page column filter persistence', () => {
         expect(afterReload.value).toBeNull();
     });
 });
+
+test.describe('List page default column filters', () => {
+    // Declared by the e2e fixture `default-filters-test-dashboard`, with a default filter
+    // of `name contains "Camera"`.
+    const DEFAULTS_PAGE_ID = 'default-filters-test';
+
+    function defaultsList(page: Page) {
+        return new BaseListPage(page, {
+            path: '/default-filters-test',
+            title: 'Default filters test',
+            newButtonLabel: 'New',
+        });
+    }
+
+    async function openAsFirstVisit(page: Page, savedColumnFilters?: unknown[]) {
+        const lp = defaultsList(page);
+        await lp.goto();
+        await lp.expectLoaded();
+        await resetSavedTableSettings(page, DEFAULTS_PAGE_ID);
+        if (savedColumnFilters) {
+            await page.evaluate(
+                ([key, id, value]) => {
+                    const settings = JSON.parse(localStorage.getItem(key) || '{}');
+                    settings.tableSettings = { ...settings.tableSettings, [id]: { columnFilters: value } };
+                    localStorage.setItem(key, JSON.stringify(settings));
+                },
+                [USER_SETTINGS_KEY, DEFAULTS_PAGE_ID, savedColumnFilters] as const,
+            );
+        }
+        await page.reload();
+        await lp.expectLoaded();
+        await lp.expectRowsLoaded();
+        return lp;
+    }
+
+    async function expectOnlyCameraRows(lp: BaseListPage) {
+        const names = await lp.getRows().allInnerTexts();
+        expect(names.length).toBeGreaterThan(0);
+        for (const name of names) {
+            expect(name).toContain('Camera');
+        }
+    }
+
+    // #5294 — a first visit applies the page's default filters to both the chips and the query
+    test('should apply the default filters on a first visit', async ({ page }) => {
+        const lp = await openAsFirstVisit(page);
+        await expect(page.getByRole('button', { name: 'Clear all' })).toBeVisible();
+        await expectOnlyCameraRows(lp);
+
+        const saved = await readSavedColumnFilters(page, DEFAULTS_PAGE_ID);
+        expect(saved.saved).toBe(false);
+    });
+
+    // #5294 — the empty array older versions saved on mount does not suppress the defaults
+    test('should apply the default filters over a legacy empty saved state', async ({ page }) => {
+        const lp = await openAsFirstVisit(page, []);
+        await expect(page.getByRole('button', { name: 'Clear all' })).toBeVisible();
+        await expectOnlyCameraRows(lp);
+    });
+
+    // #5294 — clearing the default filters sticks across a reload
+    test('should keep the default filters cleared after a reload', async ({ page }) => {
+        const lp = await openAsFirstVisit(page);
+        const filteredCount = await lp.getRows().count();
+
+        await Promise.all([
+            waitForProductList(page),
+            page.getByRole('button', { name: 'Clear all' }).click(),
+        ]);
+        await expect(page.getByRole('button', { name: 'Clear all' })).toBeHidden();
+        expect(await lp.getRows().count()).toBeGreaterThan(filteredCount);
+
+        await page.reload();
+        await lp.expectLoaded();
+        await lp.expectRowsLoaded();
+        await expect(page.getByRole('button', { name: 'Clear all' })).toBeHidden();
+        expect(await lp.getRows().count()).toBeGreaterThan(filteredCount);
+
+        const saved = await readSavedColumnFilters(page, DEFAULTS_PAGE_ID);
+        expect(saved.saved).toBe(true);
+        expect(saved.value).toBeNull();
+    });
+});
