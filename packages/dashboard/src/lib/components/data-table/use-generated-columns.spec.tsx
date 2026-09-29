@@ -36,6 +36,7 @@ const customizeColumns = {
 
 const cellContext = {
     cell: { getValue: () => PRICE },
+    column: { id: 'price', columnDef: { meta: {} } },
     row: { original: { sku: 'SKU-1', price: PRICE } },
 } as unknown as CellContext<any, any>;
 

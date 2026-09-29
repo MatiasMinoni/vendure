@@ -393,8 +393,8 @@ function withDisplayComponentOverride(
             const { column } = cellContext;
             const value = resolveCellValue(
                 cellContext,
-                (column?.columnDef?.meta as { isCustomField?: boolean } | undefined)?.isCustomField,
-                column?.id,
+                (column.columnDef.meta as { isCustomField?: boolean } | undefined)?.isCustomField,
+                column.id,
             );
             return <RegisteredDisplayComponent value={value} {...cellContext} />;
         }
