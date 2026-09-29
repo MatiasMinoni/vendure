@@ -6,7 +6,7 @@ import { addDisplayComponent } from '@/vdb/framework/extension-api/display-compo
 import { PageBlockContext } from '@/vdb/framework/layout-engine/page-block-provider.js';
 import { PageContext } from '@/vdb/framework/layout-engine/page-provider.js';
 import { CellContext, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { act, useEffect } from 'react';
+import { act, type ReactNode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -53,8 +53,8 @@ function renderColumnCell(
     return renderCell(generateColumn(pageId, columnId, additionalColumns));
 }
 
-function renderCell(column: { cell?: any }): string {
-    return renderToStaticMarkup(<>{flexRender(column.cell, cellContext)}</>);
+function renderCell(column: { cell?: any }, context: CellContext<any, any> = cellContext): string {
+    return renderToStaticMarkup(<>{flexRender(column.cell, context)}</>);
 }
 
 function generateColumn(
@@ -221,7 +221,7 @@ describe('useGeneratedColumns additionalColumns', () => {
             any,
             any
         >;
-        expect(renderToStaticMarkup(<>{flexRender(column.cell, skuLabelContext)}</>)).toBe('SKU-1');
+        expect(renderCell(column, skuLabelContext)).toBe('SKU-1');
 
         addDisplayComponent({
             pageId,
@@ -230,11 +230,59 @@ describe('useGeneratedColumns additionalColumns', () => {
             component: () => <span>late-registered</span>,
         });
 
-        expect(renderToStaticMarkup(<>{flexRender(column.cell, skuLabelContext)}</>)).toBe(
-            '<span>late-registered</span>',
-        );
+        expect(renderCell(column, skuLabelContext)).toBe('<span>late-registered</span>');
     });
 });
+
+/**
+ * Mounts a real TanStack table over the generated columns and returns a `render` that
+ * re-renders it. Each render passes a new `customizeColumns` object holding the same `cell`,
+ * which forces the column memo to recompute while the cell itself stays referentially stable.
+ */
+function mountGeneratedTable(pageId: string, cell: () => ReactNode) {
+    function Table() {
+        const { columns } = useGeneratedColumns({
+            fields,
+            customizeColumns: { price: { cell } } as any,
+            includeSelectionColumn: false,
+            includeActionsColumn: false,
+        });
+        const table = useReactTable({
+            data: [{ sku: 'SKU-1', price: PRICE }],
+            columns: columns as any,
+            getCoreRowModel: getCoreRowModel(),
+        });
+        return (
+            <>
+                {table
+                    .getRowModel()
+                    .rows.flatMap(row =>
+                        row
+                            .getVisibleCells()
+                            .map(tableCell => (
+                                <span key={tableCell.id}>
+                                    {flexRender(tableCell.column.columnDef.cell, tableCell.getContext())}
+                                </span>
+                            )),
+                    )}
+            </>
+        );
+    }
+
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const render = () =>
+        act(() =>
+            root.render(
+                <PageContext.Provider value={{ pageId }}>
+                    <PageBlockContext.Provider value={{ blockId: BLOCK_ID, column: 'main' }}>
+                        <Table />
+                    </PageBlockContext.Provider>
+                </PageContext.Provider>,
+            ),
+        );
+    return { container, render, unmount: () => act(() => root.unmount()) };
+}
 
 describe('useGeneratedColumns mounted table', () => {
     // #5346 — render-time lookup must not remount a stable cell when columns regenerate (see #4064)
@@ -247,56 +295,14 @@ describe('useGeneratedColumns mounted table', () => {
             return <span>stateful</span>;
         }
 
-        function Table() {
-            // A new customizeColumns object on every render forces the column memo to recompute.
-            const { columns } = useGeneratedColumns({
-                fields,
-                customizeColumns: { price: { cell: StatefulCell } } as any,
-                includeSelectionColumn: false,
-                includeActionsColumn: false,
-            });
-            const table = useReactTable({
-                data: [{ sku: 'SKU-1', price: PRICE }],
-                columns: columns as any,
-                getCoreRowModel: getCoreRowModel(),
-            });
-            return (
-                <>
-                    {table
-                        .getRowModel()
-                        .rows.flatMap(row =>
-                            row
-                                .getVisibleCells()
-                                .map(cell => (
-                                    <span key={cell.id}>
-                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                    </span>
-                                )),
-                        )}
-                </>
-            );
-        }
+        const table = mountGeneratedTable('test-page-stable-cell', StatefulCell);
+        table.render();
+        table.render();
+        table.render();
 
-        const container = document.createElement('div');
-        const root = createRoot(container);
-        const render = () =>
-            act(() =>
-                root.render(
-                    <PageContext.Provider value={{ pageId: 'test-page-stable-cell' }}>
-                        <PageBlockContext.Provider value={{ blockId: BLOCK_ID, column: 'main' }}>
-                            <Table />
-                        </PageBlockContext.Provider>
-                    </PageContext.Provider>,
-                ),
-            );
-
-        render();
-        render();
-        render();
-
-        expect(container.textContent).toBe('SKU-1stateful');
+        expect(table.container.textContent).toBe('SKU-1stateful');
         expect(mounts).toBe(1);
-        act(() => root.unmount());
+        table.unmount();
     });
 
     // #5346 — the case an extension author actually hits: a stateful display component is
@@ -322,56 +328,13 @@ describe('useGeneratedColumns mounted table', () => {
             return <span>core-money-cell</span>;
         }
 
-        function Table() {
-            // A new customizeColumns object on every render forces the column memo to recompute,
-            // while `cell` itself stays referentially stable.
-            const { columns } = useGeneratedColumns({
-                fields,
-                customizeColumns: { price: { cell: StableCell } } as any,
-                includeSelectionColumn: false,
-                includeActionsColumn: false,
-            });
-            const table = useReactTable({
-                data: [{ sku: 'SKU-1', price: PRICE }],
-                columns: columns as any,
-                getCoreRowModel: getCoreRowModel(),
-            });
-            return (
-                <>
-                    {table
-                        .getRowModel()
-                        .rows.flatMap(row =>
-                            row
-                                .getVisibleCells()
-                                .map(cell => (
-                                    <span key={cell.id}>
-                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                    </span>
-                                )),
-                        )}
-                </>
-            );
-        }
+        const table = mountGeneratedTable(pageId, StableCell);
+        table.render();
+        table.render();
+        table.render();
 
-        const container = document.createElement('div');
-        const root = createRoot(container);
-        const render = () =>
-            act(() =>
-                root.render(
-                    <PageContext.Provider value={{ pageId }}>
-                        <PageBlockContext.Provider value={{ blockId: BLOCK_ID, column: 'main' }}>
-                            <Table />
-                        </PageBlockContext.Provider>
-                    </PageContext.Provider>,
-                ),
-            );
-
-        render();
-        render();
-        render();
-
-        expect(container.textContent).toBe('SKU-1registered-stateful');
+        expect(table.container.textContent).toBe('SKU-1registered-stateful');
         expect(mounts).toBe(1);
-        act(() => root.unmount());
+        table.unmount();
     });
 });
