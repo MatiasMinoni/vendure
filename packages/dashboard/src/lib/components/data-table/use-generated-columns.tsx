@@ -151,8 +151,6 @@ export function useGeneratedColumns<T extends TypedDocumentNode<any, any>>({
             // Only the custom-cell branch gets a cached wrapper. The CellWrapper arrow below
             // is a fresh function on every memo run, and flexRender() makes that function the
             // cell's component type, so those cells remount whenever the memo recomputes.
-            // That is long-standing behaviour rather than something introduced here, and
-            // changing it is out of scope for this fix.
             const cellFn =
                 typeof customCell === 'function'
                     ? withDisplayComponentOverride(customCell, displayComponentId)
@@ -196,9 +194,8 @@ export function useGeneratedColumns<T extends TypedDocumentNode<any, any>>({
                 columnHelper.accessor(id as any, {
                     enableColumnFilter: false,
                     ...column,
-                    // Without an id there is nothing to look up, and the column keeps whatever
-                    // `cell` it supplied so that TanStack's own default still applies when it
-                    // supplied none.
+                    // Outside a page block there is no registry key, so the column keeps its own
+                    // `cell`, or TanStack's default when it has none.
                     ...(displayComponentId
                         ? {
                               cell: withDisplayComponentOverride(
