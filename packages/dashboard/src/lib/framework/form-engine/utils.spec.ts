@@ -306,6 +306,15 @@ describe('mergeStartingValues', () => {
         ]);
     });
 
+    it('keeps the default for a key set to undefined', () => {
+        const result = mergeStartingValues(defaults(), {
+            enabled: undefined,
+            customFields: { infoUrl: undefined },
+            translations: [{ languageCode: 'en', name: undefined }],
+        });
+        expect(result).toEqual(defaults());
+    });
+
     it('lets an explicit null replace the default', () => {
         const result = mergeStartingValues(defaults(), { customFields: { isDownloadable: null } });
         expect(result.customFields.isDownloadable).toBeNull();

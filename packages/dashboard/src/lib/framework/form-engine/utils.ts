@@ -293,7 +293,8 @@ function isPersisted(entry: any): boolean {
  * Merges `setValuesForCreate` values into the form's default values. Objects such as `customFields`
  * are merged key by key. Each translation row is merged onto the default row of the same language,
  * and a row for a language with no default row is merged onto the first default row and added last.
- * Everything else, including other arrays, replaces the default.
+ * Everything else, including other arrays, replaces the default. A key set to `undefined` keeps
+ * the default.
  */
 export function mergeStartingValues<T extends Record<string, any>>(
     defaults: T,
@@ -301,6 +302,9 @@ export function mergeStartingValues<T extends Record<string, any>>(
 ): T {
     const result: Record<string, any> = { ...defaults };
     for (const [key, value] of Object.entries(startingValues)) {
+        if (value === undefined) {
+            continue;
+        }
         if (key === 'translations' && Array.isArray(value)) {
             // react-hook-form compares rows by position, so each row must keep its default position.
             const defaultRows: Array<Record<string, any>> = defaults.translations ?? [];
