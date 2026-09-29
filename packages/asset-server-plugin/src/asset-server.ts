@@ -98,7 +98,10 @@ export class AssetServer {
             const key = this.getFileNameFromParameters(req.path, params);
             try {
                 const file = await this.assetStorageStrategy.readFileToBuffer(key);
-                const mimeType = await this.resolveMimeType(file, key);
+                let mimeType = this.getMimeType(key);
+                if (!mimeType) {
+                    mimeType = (await getFileType(file))?.mime || 'application/octet-stream';
+                }
                 res.contentType(mimeType);
                 this.setAssetSecurityHeaders(res, mimeType);
                 res.setHeader('Cache-Control', this.cacheHeader);
@@ -138,7 +141,10 @@ export class AssetServer {
                             await this.assetStorageStrategy.writeFileFromBuffer(cachedFileName, imageBuffer);
                             Logger.debug(`Saved cached asset: ${cachedFileName}`, loggerCtx);
                         }
-                        const mimeType = await this.resolveMimeType(imageBuffer, cachedFileName);
+                        let mimeType = this.getMimeType(cachedFileName);
+                        if (!mimeType) {
+                            mimeType = (await getFileType(imageBuffer))?.mime || 'image/jpeg';
+                        }
                         res.set('Content-Type', mimeType);
                         this.setAssetSecurityHeaders(res, mimeType);
                         res.send(imageBuffer);
@@ -243,9 +249,13 @@ export class AssetServer {
         const decodedReqPath = this.sanitizeFilePath(filePath);
         if (imageParamsString !== '') {
             const imageParamHash = this.md5(imageParamsString);
+            // Without a requested format, sharp writes SVG input as PNG. The cached file must be
+            // named for what it contains, because its extension decides the served Content-Type.
+            const isSvg = path.extname(decodedReqPath).toLowerCase() === '.svg';
+            const outputFormat = imageFormat || (isSvg ? 'png' : undefined);
             return path.posix.join(
                 this.cacheDir,
-                this.addSuffix(decodedReqPath, imageParamHash, imageFormat),
+                this.addSuffix(decodedReqPath, imageParamHash, outputFormat),
             );
         } else {
             return decodedReqPath;
@@ -298,19 +308,10 @@ export class AssetServer {
     }
 
     /**
-     * The mime type to declare for a file about to be served. The bytes win over the file name,
-     * because a transform is cached under the source asset's extension: an SVG rasterised by
-     * sharp is a PNG stored as `.svg`. Text-based formats have no signature, so they fall back
-     * to the name.
+     * Attempt to get the mime type from the file name.
      */
-    private async resolveMimeType(buffer: Buffer, fileName: string): Promise<string> {
-        const fromFileName = mime.lookup(fileName) || undefined;
-        const detected = (await getFileType(buffer))?.mime;
-        // `file-type` reports any XML document as `application/xml`; the name is more specific.
-        if (detected === 'application/xml' && fromFileName?.endsWith('+xml')) {
-            return fromFileName;
-        }
-        return detected || fromFileName || 'application/octet-stream';
+    private getMimeType(fileName: string): string | undefined {
+        return mime.lookup(fileName) || undefined;
     }
 
     /**
