@@ -8,21 +8,10 @@ import { BaseListPage } from '../../page-objects/list-page.base.js';
 const USER_SETTINGS_KEY = 'vendure-user-settings';
 const PAGE_ID = 'product-list';
 
-/**
- * Reads the saved column filters for a page. `saved` is what distinguishes "no value has
- * been saved" from a saved `null` — the "user cleared every filter" sentinel — since
- * `undefined` cannot survive the trip out of `page.evaluate` and both arrive as `null`.
- */
-async function readSavedColumnFilters(page: Page, pageId: string) {
+/** Reads the saved table settings for a page. */
+async function readSavedTableSettings(page: Page, pageId: string) {
     return page.evaluate(
-        ([key, id]) => {
-            const settings = JSON.parse(localStorage.getItem(key) || '{}');
-            const tableSettings = settings.tableSettings?.[id] ?? {};
-            return {
-                saved: Object.prototype.hasOwnProperty.call(tableSettings, 'columnFilters'),
-                value: tableSettings.columnFilters ?? null,
-            };
-        },
+        ([key, id]) => JSON.parse(localStorage.getItem(key) || '{}').tableSettings?.[id] ?? {},
         [USER_SETTINGS_KEY, pageId] as const,
     );
 }
@@ -103,15 +92,13 @@ test.describe('List page column filter persistence', () => {
         await lp.expectLoaded();
         await lp.expectRowsLoaded();
 
-        const savedFilters = await readSavedColumnFilters(page, PAGE_ID);
-        expect(savedFilters.saved).toBe(false);
+        const saved = await readSavedTableSettings(page, PAGE_ID);
+        expect(saved).not.toHaveProperty('columnFilters');
+        expect(saved).not.toHaveProperty('columnFiltersConfigured');
     });
 
-    // #5294 — clearing every filter is a deliberate choice and has to be saved as such, so
-    // that a page's `defaultColumnFilters` are not re-applied on the next visit. It is saved
-    // as `null` rather than `[]`, which is the value older versions wrote on mount and so
-    // cannot mean anything.
-    test('should save cleared filters as null and keep it across a reload', async ({ page }) => {
+    // #5294 — clearing every filter is saved as a choice, so `defaultColumnFilters` stay away
+    test('should save cleared filters as configured and keep them across a reload', async ({ page }) => {
         const lp = productList(page);
         await lp.goto();
         await lp.expectLoaded();
@@ -127,9 +114,9 @@ test.describe('List page column filter persistence', () => {
         const filteredCount = await lp.getRows().count();
         expect(filteredCount).toBeLessThan(initialCount);
 
-        const afterFiltering = await readSavedColumnFilters(page, PAGE_ID);
-        expect(afterFiltering.saved).toBe(true);
-        expect(afterFiltering.value).toHaveLength(1);
+        const afterFiltering = await readSavedTableSettings(page, PAGE_ID);
+        expect(afterFiltering.columnFilters).toHaveLength(1);
+        expect(afterFiltering.columnFiltersConfigured).toBe(true);
 
         await Promise.all([
             waitForProductList(page),
@@ -137,19 +124,18 @@ test.describe('List page column filter persistence', () => {
         ]);
         await lp.expectRowCount(initialCount);
 
-        // Saved as `null`: the user has configured the filters and chosen to have none.
-        const afterClearing = await readSavedColumnFilters(page, PAGE_ID);
-        expect(afterClearing.saved).toBe(true);
-        expect(afterClearing.value).toBeNull();
+        const afterClearing = await readSavedTableSettings(page, PAGE_ID);
+        expect(afterClearing.columnFilters).toEqual([]);
+        expect(afterClearing.columnFiltersConfigured).toBe(true);
 
         await page.reload();
         await lp.expectLoaded();
         await lp.expectRowsLoaded();
         await lp.expectRowCount(initialCount);
 
-        const afterReload = await readSavedColumnFilters(page, PAGE_ID);
-        expect(afterReload.saved).toBe(true);
-        expect(afterReload.value).toBeNull();
+        const afterReload = await readSavedTableSettings(page, PAGE_ID);
+        expect(afterReload.columnFilters).toEqual([]);
+        expect(afterReload.columnFiltersConfigured).toBe(true);
     });
 });
 
@@ -201,8 +187,8 @@ test.describe('List page default column filters', () => {
         await expect(page.getByRole('button', { name: 'Clear all' })).toBeVisible();
         await expectOnlyCameraRows(lp);
 
-        const saved = await readSavedColumnFilters(page, DEFAULTS_PAGE_ID);
-        expect(saved.saved).toBe(false);
+        const saved = await readSavedTableSettings(page, DEFAULTS_PAGE_ID);
+        expect(saved).not.toHaveProperty('columnFilters');
     });
 
     // #5294 — the empty array older versions saved on mount does not suppress the defaults
@@ -230,8 +216,8 @@ test.describe('List page default column filters', () => {
         await expect(page.getByRole('button', { name: 'Clear all' })).toBeHidden();
         expect(await lp.getRows().count()).toBeGreaterThan(filteredCount);
 
-        const saved = await readSavedColumnFilters(page, DEFAULTS_PAGE_ID);
-        expect(saved.saved).toBe(true);
-        expect(saved.value).toBeNull();
+        const saved = await readSavedTableSettings(page, DEFAULTS_PAGE_ID);
+        expect(saved.columnFilters).toEqual([]);
+        expect(saved.columnFiltersConfigured).toBe(true);
     });
 });

@@ -123,21 +123,17 @@ describe('ListPage defaultColumnFilters', () => {
         expect(captured.props?.columnFilters).toEqual(userFilters);
     });
 
-    // `null` is the saved "the user cleared every filter here" state. That is a deliberate
-    // choice, so the defaults must not come back on the next visit or remount.
     it('does not re-apply the defaults once the user has cleared all filters', () => {
-        mocks.settings = { tableSettings: { 'test-list': { columnFilters: null } } };
+        mocks.settings = {
+            tableSettings: { 'test-list': { columnFilters: [], columnFiltersConfigured: true } },
+        };
 
         renderToStaticMarkup(<ListPage {...baseProps} />);
 
         expect(captured.props?.columnFilters).toEqual([]);
     });
 
-    // An empty array is what dashboard versions before this feature saved for a page merely
-    // by rendering it, since the data table reported its filter state on mount. It is
-    // indistinguishable from a deliberate clear made by those versions, so it means neither
-    // and is read as "no preference" — otherwise the defaults would never reach any user who
-    // had already visited the page, which is every existing user.
+    // Versions before 3.8.0 saved an empty `columnFilters` for a page on every visit.
     it('applies the defaults over an empty saved filter state left by an older version', () => {
         mocks.settings = { tableSettings: { 'test-list': { columnFilters: [] } } };
 
@@ -146,12 +142,13 @@ describe('ListPage defaultColumnFilters', () => {
         expect(captured.props?.columnFilters).toEqual(defaultColumnFilters);
     });
 
-    it('saves an emptied filter set as null rather than an empty array', () => {
+    it('marks the filters as configured when the user clears them', () => {
         renderToStaticMarkup(<ListPage {...baseProps} />);
 
         captured.props?.onFilterChange(tableStub(), []);
 
-        expect(mocks.setTableSettings).toHaveBeenCalledWith('test-list', 'columnFilters', null);
+        expect(mocks.setTableSettings).toHaveBeenCalledWith('test-list', 'columnFilters', []);
+        expect(mocks.setTableSettings).toHaveBeenCalledWith('test-list', 'columnFiltersConfigured', true);
     });
 
     it('saves a non-empty filter set as it is', () => {
@@ -162,16 +159,6 @@ describe('ListPage defaultColumnFilters', () => {
         captured.props?.onFilterChange(tableStub(), userFilters);
 
         expect(mocks.setTableSettings).toHaveBeenCalledWith('test-list', 'columnFilters', userFilters);
-    });
-
-    // The `null` sentinel is written for every page, not only those declaring defaults: it is
-    // what the store means by "cleared" now, and a page can gain defaults later.
-    it('saves an emptied filter set as null on pages with no defaults', () => {
-        renderToStaticMarkup(<ListPage {...baseProps} defaultColumnFilters={undefined} />);
-
-        captured.props?.onFilterChange(tableStub(), []);
-
-        expect(mocks.setTableSettings).toHaveBeenCalledWith('test-list', 'columnFilters', null);
     });
 
     it('ignores the defaults when no pageId is set, since there is nowhere to persist a change', () => {

@@ -466,35 +466,6 @@ export interface ListPageProps<
 }
 
 /**
- * Resolves the filters a list page should start with from the user's saved filters for the
- * page and the route's `defaultColumnFilters`. The defaults apply only until the user has
- * expressed a preference, which the saved value encodes in three states:
- *
- * - `null` — the user cleared every filter here. A deliberate choice, so no filters, and the
- *   defaults stay away. This is what clearing all the filters persists (see `onFilterChange`).
- * - a non-empty array — the user's own filters, which win.
- * - absent, or `[]` — no preference, so the defaults apply. An empty array is what dashboard
- *   versions before `defaultColumnFilters` wrote for a page merely by rendering it, so it may
- *   equally be a deliberate clear made back then; the two are indistinguishable and treating
- *   them as "no preference" is what lets the defaults reach users who already have that entry.
- *
- * Returns `undefined` rather than `[]` when nothing applies, leaving the prop absent exactly
- * as it was before this resolution existed.
- */
-function resolveColumnFilters(
-    savedColumnFilters: ColumnFiltersState | null | undefined,
-    defaultColumnFilters: ColumnFiltersState | undefined,
-): ColumnFiltersState | undefined {
-    if (savedColumnFilters === null) {
-        return [];
-    }
-    if (savedColumnFilters?.length) {
-        return savedColumnFilters;
-    }
-    return defaultColumnFilters;
-}
-
-/**
  * @description
  * Auto-generates a list page with columns generated based on the provided query document fields.
  *
@@ -626,18 +597,13 @@ export function ListPage<
     const { setTableSettings, settings, settingsReady } = useUserSettings();
     const tableSettings = pageId ? settings.tableSettings?.[pageId] : undefined;
 
-    // `defaultColumnFilters` is a silent no-op without a `pageId`, so say so in development
-    // rather than leaving the author to wonder why their defaults never show up.
+    const hasDefaultColumnFilters = !!defaultColumnFilters;
     useEffect(() => {
-        if (process.env.NODE_ENV !== 'production' && defaultColumnFilters && !pageId) {
+        if (process.env.NODE_ENV !== 'production' && hasDefaultColumnFilters && !pageId) {
             // eslint-disable-next-line no-console
-            console.warn(
-                `ListPage: "defaultColumnFilters" was set without a "pageId", so it has no effect. ` +
-                    `The persisted table settings are what tell "not configured yet" apart from ` +
-                    `"cleared by the user", and there are none without a "pageId".`,
-            );
+            console.warn('ListPage: "defaultColumnFilters" has no effect without a "pageId".');
         }
-    }, [defaultColumnFilters, pageId]);
+    }, [hasDefaultColumnFilters, pageId]);
 
     const pagination = {
         page: routeSearch.page ? Number.parseInt(routeSearch.page) : 1,
@@ -648,18 +614,19 @@ export function ListPage<
 
     // Column visibility/order user-settings merging is owned by useViewOptionDefaults inside
     // PaginatedListDataTable, so only raw code defaults are passed down here.
+    // Without `columnFiltersConfigured`, a saved `[]` is the one versions before 3.8.0 wrote on
+    // every visit, so the defaults apply over it.
+    const savedColumnFilters = tableSettings?.columnFilters;
+    const savedColumnFiltersApply = tableSettings?.columnFiltersConfigured || !!savedColumnFilters?.length;
     const columnFilters = pageId
-        ? resolveColumnFilters(tableSettings?.columnFilters, defaultColumnFilters)
+        ? savedColumnFiltersApply
+            ? savedColumnFilters
+            : defaultColumnFilters
         : routeSearch.filters;
 
-    // The DataTable seeds its filter state from `columnFilters` once, on mount. The user
-    // settings resolve asynchronously — the local values are in effect until the server-side
-    // SettingsStore responds and replaces them — so a table mounted before that keeps filters
-    // that no longer match the persisted state. With `defaultColumnFilters` that becomes
-    // user-visible: the default chips would be on screen while the list query ran unfiltered.
-    // So hold the table back until the settings have resolved, but only on pages that use the
-    // feature, leaving every other list page mounting exactly as before.
-    const awaitingSettings = !!defaultColumnFilters && !!pageId && !settingsReady;
+    // The DataTable reads `columnFilters` only on mount, so wait for the server-side settings
+    // before mounting a table whose defaults they may override.
+    const awaitingSettings = hasDefaultColumnFilters && !!pageId && !settingsReady;
 
     const sorting: SortingState = (routeSearch.sort ?? '')
         .split(',')
@@ -725,11 +692,8 @@ export function ListPage<
         onFilterChange: (table: Table<any>, filters: ColumnFiltersState) => {
             persistListStateToUrl(table, { filters });
             if (pageId) {
-                // An empty filter set is saved as `null`, not `[]`: the user removing every
-                // filter is a preference, and it has to be distinguishable from the `[]` that
-                // older dashboard versions wrote for a page just by rendering it. See
-                // `resolveColumnFilters`.
-                setTableSettings(pageId, 'columnFilters', filters.length ? filters : null);
+                setTableSettings(pageId, 'columnFilters', filters);
+                setTableSettings(pageId, 'columnFiltersConfigured', true);
             }
         },
         onColumnVisibilityChange: (table: Table<any>, columnVisibility: any) => {

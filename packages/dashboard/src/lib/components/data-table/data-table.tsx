@@ -35,7 +35,6 @@ import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { AddFilterMenu } from './add-filter-menu.js';
 import { ActiveFiltersPopover } from './data-table-active-filters-popover.js';
 import { DataTableBulkActions, getRowItemId } from './data-table-bulk-actions.js';
-import { columnFiltersEqual } from './data-table-column-filters.js';
 import { DataTableProvider } from './data-table-context.js';
 import { createPaginationState, syncPaginationState } from './data-table-pagination-state.js';
 import {
@@ -435,10 +434,8 @@ export function DataTable<TData>({
     }, [onPageChange, searchTerm]);
 
     useEffect(() => {
-        // `prevColumnFiltersRef` starts out holding the initial filter state, so this also
-        // covers the mount run: the filters the table was given are not a change the user
-        // made, and reporting them would persist them as if they were.
-        if (columnFiltersEqual(prevColumnFiltersRef.current, columnFilters)) {
+        // Also skips the mount run, so the initial filters are not reported as a change.
+        if (JSON.stringify(prevColumnFiltersRef.current) === JSON.stringify(columnFilters)) {
             return;
         }
         prevColumnFiltersRef.current = columnFilters;
