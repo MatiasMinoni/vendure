@@ -37,6 +37,7 @@ export const getTasksDocument = graphql(`
             description
             schedule
             scheduleDescription
+            timezone
             lastResult
             enabled
         }
@@ -308,6 +309,21 @@ export const createFacetDocument = graphql(
         }
     `,
     [facetWithValuesFragment],
+);
+
+export const multiFieldMutationDocument = graphql(
+    `
+        mutation MultiFieldTest($facet: CreateFacetInput!, $channel: CreateChannelInput!) {
+            a: createFacet(input: $facet) {
+                id
+                code
+            }
+            b: createChannel(input: $channel) {
+                ...Channel
+            }
+        }
+    `,
+    [channelFragment],
 );
 
 export const updateFacetDocument = graphql(
@@ -1172,6 +1188,24 @@ export const deleteCustomerNoteDocument = graphql(`
         }
     }
 `);
+
+export const verifyCustomerAccountDocument = graphql(
+    `
+        mutation VerifyCustomerAccount($id: ID!, $password: String) {
+            verifyCustomerAccount(id: $id, password: $password) {
+                ...Customer
+                ... on ErrorResult {
+                    errorCode
+                    message
+                }
+                ... on PasswordValidationError {
+                    validationErrorMessage
+                }
+            }
+        }
+    `,
+    [customerFragment],
+);
 
 export const updateCustomerGroupDocument = graphql(
     `

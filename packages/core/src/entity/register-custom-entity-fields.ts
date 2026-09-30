@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/ban-types */
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
 import { CustomFieldType, Type } from '@vendure/common/lib/shared-types';
 import { assertNever } from '@vendure/common/lib/shared-utils';
 import {
@@ -16,7 +16,11 @@ import { EmbeddedMetadataArgs } from 'typeorm/metadata-args/EmbeddedMetadataArgs
 import { RelationMetadataArgs } from 'typeorm/metadata-args/RelationMetadataArgs';
 import { DateUtils } from 'typeorm/util/DateUtils';
 
-import { CustomFieldConfig, CustomFields } from '../config/custom-field/custom-field-types';
+import {
+    CustomFieldConfig,
+    CustomFields,
+    isLocalizedCustomFieldType,
+} from '../config/custom-field/custom-field-types';
 import { Logger } from '../config/logger/vendure-logger';
 import { VendureConfig } from '../config/vendure-config';
 import { getDatabaseType, VendureDatabaseType } from '../connection/database-type';
@@ -30,6 +34,14 @@ import { coreEntitiesMap } from './entities';
  * The maximum length of the "length" argument of a MySQL varchar column.
  */
 const MAX_STRING_LENGTH = 65535;
+
+/**
+ * The relation property by which a translatable entity points at its translation entity. This is
+ * the single signal used to detect translation entities — both to exclude them from custom-field
+ * auto-init ({@link getTranslationEntityNames}) and to locate the translation type when registering
+ * localized custom fields ({@link registerCustomEntityFields}).
+ */
+const TRANSLATIONS_RELATION_PROPERTY = 'translations';
 
 /**
  * @description
@@ -56,22 +68,32 @@ export function getEntityNamesWithCustomFields(entities: Array<Type<any>>): stri
     // (a second server in the same process, or an imported-but-uninstalled plugin) — which would
     // otherwise seed phantom `config.customFields` keys.
     const registeredEntityNames = new Set(entities.map(entity => entity.name));
-    const metadataArgsStorage = getMetadataArgsStorage();
-    // The translation-entity exclusion set is intentionally built from the process-global metadata:
-    // it is only ever used to exclude, and the candidate names are already filtered to
-    // `registeredEntityNames` below, so a superset here is harmless.
-    const translationEntityNames = new Set(
-        metadataArgsStorage.relations
-            .filter(relation => relation.propertyName === 'translations')
-            .map(relation => getRelationTargetName(relation.type))
-            .filter((name): name is string => name != null),
-    );
-    const names = metadataArgsStorage.embeddeds
-        .filter(embedded => embedded.propertyName === 'customFields')
+    const translationEntityNames = getTranslationEntityNames();
+    const names = getMetadataArgsStorage()
+        .embeddeds.filter(embedded => embedded.propertyName === 'customFields')
         .map(embedded => (typeof embedded.target === 'string' ? embedded.target : embedded.target.name))
         .filter(name => registeredEntityNames.has(name))
         .filter(name => !translationEntityNames.has(name));
     return Array.from(new Set(names));
+}
+
+/**
+ * The relation-based definition of "is this a translation entity?", used internally by
+ * {@link getEntityNamesWithCustomFields} to build its exclusion set. A translation entity is the
+ * target of a `translations` relation; it carries its own `customFields` embedded (for localized
+ * field values) but is never a valid `config.customFields` key.
+ *
+ * Built from the process-global metadata storage, so it may contain names of entities not
+ * registered with this server. Callers filter their candidates to registered entities first, so a
+ * stray name here can only ever exclude, never include.
+ */
+function getTranslationEntityNames(): Set<string> {
+    return new Set(
+        getMetadataArgsStorage()
+            .relations.filter(relation => relation.propertyName === TRANSLATIONS_RELATION_PROPERTY)
+            .map(relation => getRelationTargetName(relation.type))
+            .filter((name): name is string => name != null),
+    );
 }
 
 /**
@@ -267,18 +289,18 @@ export function registerCustomFieldsForEntity(
             };
 
             if (translation) {
-                if (customField.type === 'localeString' || customField.type === 'localeText') {
+                if (isLocalizedCustomFieldType(customField.type)) {
                     registerColumn();
                 }
             } else {
-                if (customField.type !== 'localeString' && customField.type !== 'localeText') {
+                if (!isLocalizedCustomFieldType(customField.type)) {
                     registerColumn();
                 }
             }
 
             const relationFieldsCount = customFields.filter(f => f.type === 'relation').length;
             const nonLocaleStringFieldsCount = customFields.filter(
-                f => f.type !== 'localeString' && f.type !== 'localeText' && f.type !== 'relation',
+                f => !isLocalizedCustomFieldType(f.type) && f.type !== 'relation',
             ).length;
 
             if (0 < relationFieldsCount && nonLocaleStringFieldsCount === 0) {
@@ -422,7 +444,7 @@ function assertLocaleFieldsNotSpecified(config: VendureConfig, entityName: keyof
     const customFields = config.customFields && config.customFields[entityName];
     if (customFields) {
         for (const customField of customFields) {
-            if (customField.type === 'localeString' || customField.type === 'localeText') {
+            if (isLocalizedCustomFieldType(customField.type)) {
                 Logger.error(
                     `Custom field "${customField.name}" on entity "${entityName}" cannot be of type "localeString" or "localeText". ` +
                         `This entity does not support localization.`,
@@ -450,7 +472,7 @@ export function registerCustomEntityFields(config: VendureConfig) {
             }
             const translationsMetadata = metadataArgsStorage
                 .filterRelations(customFieldsMetadata.target)
-                .find(m => m.propertyName === 'translations');
+                .find(m => m.propertyName === TRANSLATIONS_RELATION_PROPERTY);
             if (translationsMetadata) {
                 // This entity is translatable, which means that we should
                 // also register any localized custom fields on the related
