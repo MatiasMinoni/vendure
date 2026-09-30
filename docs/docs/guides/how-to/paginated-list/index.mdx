@@ -275,9 +275,8 @@ pattern.
 
 Where you need `regex`, the database decides what one pattern can cost. PostgreSQL evaluates any
 pattern quickly. SQLite and SQL.js match with the [RE2](https://github.com/google/re2) engine, which
-runs in linear time. Prefer one of those if your project exposes `regex` filters. MariaDB and MySQL
-match with a backtracking engine and repeat that work for every row they read, so a slow pattern
-there is slow once per row.
+runs in linear time. MariaDB and MySQL match with a backtracking engine inside the database server,
+so a slow pattern makes that query slow but does not block the Vendure server.
 
 RE2 supports neither lookaround nor backreferences. On SQLite and SQL.js a filter which uses either
 is rejected with an error rather than failing part-way through the query.
