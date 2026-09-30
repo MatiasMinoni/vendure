@@ -2,29 +2,43 @@ import { AnyRoute, createRoute, createRouter, RouterOptions } from '@tanstack/re
 import { useMemo } from 'react';
 import { ErrorPage } from '../../components/shared/error-page.js';
 import { AUTHENTICATED_ROUTE_PREFIX } from '../../constants.js';
-import { useDashboardExtensions } from '../extension-api/use-dashboard-extensions.js';
 import { extensionRoutes } from './page-api.js';
+
+/**
+ * TanStack's `addChildren()` replaces `route.children` in place, so extending the
+ * route tree mutates the shared routes from `routeTree.gen`. We keep each route's
+ * original children so that a rebuild (StrictMode, HMR remount) starts from the
+ * base tree instead of finding the extension routes it added last time.
+ */
+const baseChildrenByRoute = new WeakMap<AnyRoute, AnyRoute[]>();
+
+function getBaseChildren(route: AnyRoute): AnyRoute[] {
+    let children = baseChildrenByRoute.get(route);
+    if (!children) {
+        children = [...(route.children ?? [])];
+        baseChildrenByRoute.set(route, children);
+    }
+    return children;
+}
 
 /**
  * Creates a TanStack Router with the base route tree extended with additional
  * routes from dashboard extensions.
+ *
+ * Call it only after the dashboard extensions have been registered, because the
+ * router is created once and is not rebuilt when extension routes change.
+ * `@tanstack/react-router` does not load a router instance that replaces the
+ * one a mounted `RouterProvider` already holds.
  */
 export const useExtendedRouter = (
     baseRouteTree: AnyRoute,
     routerOptions: Omit<RouterOptions<AnyRoute, any>, 'routeTree'>,
 ) => {
-    const { extensionsLoaded } = useDashboardExtensions();
-
     return useMemo(() => {
-        // Start with the base route tree
-        let routeTree = baseRouteTree;
+        const routeTree = baseRouteTree;
+        const rootChildren = getBaseChildren(routeTree);
 
-        // Only extend if extensions are loaded
-        if (!extensionsLoaded) {
-            return createExtendedRouter(routerOptions, routeTree);
-        }
-
-        const authenticatedRouteIndex = routeTree.children.findIndex(
+        const authenticatedRouteIndex = rootChildren.findIndex(
             (r: AnyRoute) => r.id === AUTHENTICATED_ROUTE_PREFIX,
         );
 
@@ -42,7 +56,8 @@ export const useExtendedRouter = (
             return createExtendedRouter(routerOptions, routeTree);
         }
 
-        let authenticatedRoute: AnyRoute = routeTree.children[authenticatedRouteIndex];
+        const authenticatedRoute: AnyRoute = rootChildren[authenticatedRouteIndex];
+        const authenticatedChildren = getBaseChildren(authenticatedRoute);
 
         const newAuthenticatedRoutes: AnyRoute[] = [];
         const newRootRoutes: AnyRoute[] = [];
@@ -57,7 +72,7 @@ export const useExtendedRouter = (
             if (isAuthenticated) {
                 // Check if the route already exists under authenticated route
                 if (
-                    authenticatedRoute.children.findIndex(
+                    authenticatedChildren.findIndex(
                         (r: AnyRoute) => r.path === pathWithoutLeadingSlash,
                     ) > -1
                 ) {
@@ -78,7 +93,7 @@ export const useExtendedRouter = (
                 // Check if the route already exists at the root level
                 // Check both by path and by id (which includes the leading slash)
                 const routeExists =
-                    routeTree.children.some(
+                    rootChildren.some(
                         (r: AnyRoute) =>
                             r.path === `/${pathWithoutLeadingSlash}` ||
                             r.path === pathWithoutLeadingSlash ||
@@ -107,17 +122,14 @@ export const useExtendedRouter = (
             }
         }
 
-        // Only extend the tree if we have new routes to add
-        if (newAuthenticatedRoutes.length === 0 && newRootRoutes.length === 0) {
-            return createExtendedRouter(routerOptions, routeTree);
-        }
-
-        const childrenWithoutAuthenticated = routeTree.children.filter(
+        // Always reset the children, even with no new routes, so that routes
+        // added by an earlier build are removed.
+        const childrenWithoutAuthenticated = rootChildren.filter(
             (r: AnyRoute) => r.id !== AUTHENTICATED_ROUTE_PREFIX,
         );
 
         const updatedAuthenticatedRoute = authenticatedRoute.addChildren([
-            ...authenticatedRoute.children,
+            ...authenticatedChildren,
             ...newAuthenticatedRoutes,
         ]);
 
@@ -128,7 +140,7 @@ export const useExtendedRouter = (
         ]);
 
         return createExtendedRouter(routerOptions, extendedRouteTree);
-    }, [baseRouteTree, routerOptions, extensionsLoaded]);
+    }, [baseRouteTree, routerOptions]);
 };
 
 function warnRouteCollision(path: string) {

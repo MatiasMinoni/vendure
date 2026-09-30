@@ -5,10 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extensionRoutes } from './page-api.js';
 import { useExtendedRouter } from './use-extended-router.js';
 
-vi.mock('../extension-api/use-dashboard-extensions.js', () => ({
-    useDashboardExtensions: () => ({ extensionsLoaded: true, reloadCount: 0 }),
-}));
-
 vi.mock('../../components/shared/error-page.js', () => ({
     ErrorPage: () => null,
 }));
@@ -28,8 +24,7 @@ function buildBaseRouteTree() {
     return routeTree;
 }
 
-function runHook() {
-    const routeTree = buildBaseRouteTree();
+function runHook(routeTree = buildBaseRouteTree()) {
     let routeIds: string[] = [];
     function Probe() {
         routeIds = Object.keys(useExtendedRouter(routeTree, {}).routesById);
@@ -80,6 +75,24 @@ describe('useExtendedRouter route collisions', () => {
         const routeIds = runHook();
 
         expect(routeIds).toContain('/_authenticated/my-page');
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    // #5451 — rebuilding the router (StrictMode, HMR) must not find the extension routes of the previous build
+    it('does not warn or duplicate routes when the router is built again from the same route tree', () => {
+        extensionRoutes.set('/my-page', { path: '/my-page', component: () => null } as any);
+        extensionRoutes.set('/public-page', {
+            path: '/public-page',
+            authenticated: false,
+            component: () => null,
+        } as any);
+        const routeTree = buildBaseRouteTree();
+
+        runHook(routeTree);
+        const routeIds = runHook(routeTree);
+
+        expect(routeIds.filter(id => id === '/_authenticated/my-page')).toHaveLength(1);
+        expect(routeIds.filter(id => id === '/public-page')).toHaveLength(1);
         expect(warn).not.toHaveBeenCalled();
     });
 });
