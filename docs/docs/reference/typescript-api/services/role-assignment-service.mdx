@@ -140,9 +140,12 @@ this.
 
 Takes a write lock on the SuperAdmin Role row before counting, held until the
 surrounding transaction commits. Two SuperAdmins removing or deleting each other at
-the same time would otherwise both count two holders and leave none. Call it inside the
-transaction which performs the write. On SQLite the lock is not supported; SQLite
-serializes writes itself.
+the same time would otherwise both count two holders and leave none. The count is a
+locking read too: under REPEATABLE READ (the MySQL and MariaDB default) a plain read
+after the lock still sees the snapshot taken at the transaction's first read, so it
+would miss the other transaction's committed write. Call it inside the transaction
+which performs the write. On SQLite locks are not supported; SQLite serializes writes
+itself.
 ### assign
 
 <MemberInfo kind="method" type={`(ctx: <a href='/reference/typescript-api/request/request-context#requestcontext'>RequestContext</a>, userId: <a href='/reference/typescript-api/common/id#id'>ID</a>, pairs: <a href='/reference/typescript-api/services/role-assignment-service#rolechannelpair'>RoleChannelPair</a>[]) => Promise<<a href='/reference/typescript-api/entities/role-assignment#roleassignment'>RoleAssignment</a>[]>`}  since="4.0.0"  />
