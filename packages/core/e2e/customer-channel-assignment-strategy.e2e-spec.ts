@@ -8,8 +8,17 @@ import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
 
 import { ResultOf } from './graphql/graphql-admin';
-import { createChannelDocument, getCustomerListDocument, MeDocument } from './graphql/shared-definitions';
-import { getActiveCustomerDocument, getProductsTake3Document } from './graphql/shop-definitions';
+import {
+    assignProductToChannelDocument,
+    createChannelDocument,
+    getCustomerListDocument,
+    MeDocument,
+} from './graphql/shared-definitions';
+import {
+    addItemToOrderDocument,
+    getActiveCustomerDocument,
+    getProductsTake3Document,
+} from './graphql/shop-definitions';
 import { assertThrowsWithMessage } from './utils/assert-throws-with-message';
 
 const NO_AUTOJOIN_CHANNEL_CODE = 'no-autojoin-channel';
@@ -55,7 +64,7 @@ describe('CustomerChannelAssignmentStrategy', () => {
             [NO_AUTOJOIN_CHANNEL_CODE, NO_AUTOJOIN_CHANNEL_TOKEN],
             [OPEN_CHANNEL_CODE, OPEN_CHANNEL_TOKEN],
         ]) {
-            await adminClient.query(createChannelDocument, {
+            const { createChannel } = await adminClient.query(createChannelDocument, {
                 input: {
                     code,
                     token,
@@ -66,6 +75,11 @@ describe('CustomerChannelAssignmentStrategy', () => {
                     defaultTaxZoneId: 'T_1',
                 },
             });
+            if (code === NO_AUTOJOIN_CHANNEL_CODE && 'id' in createChannel) {
+                await adminClient.query(assignProductToChannelDocument, {
+                    input: { channelId: createChannel.id, productIds: ['T_1'] },
+                });
+            }
         }
     }, TEST_SETUP_TIMEOUT_MS);
 
@@ -113,6 +127,24 @@ describe('CustomerChannelAssignmentStrategy', () => {
         await assertThrowsWithMessage(() => shopClient.query(MeDocument), FORBIDDEN_MESSAGE)();
         const { activeCustomer } = await shopClient.query(getActiveCustomerDocument);
         expect(activeCustomer).toBeNull();
+        expect(await channelMembers(NO_AUTOJOIN_CHANNEL_TOKEN)).not.toContain(customer.emailAddress);
+    });
+
+    // An order built on a declined channel belongs to a guest: the Customer is not attached
+    // to it and does not become a member of the channel.
+    it('an order built on a no-autojoin channel has no Customer attached', async () => {
+        shopClient.setChannelToken(NO_AUTOJOIN_CHANNEL_TOKEN);
+        await shopClient.asUserWithCredentials(customer.emailAddress, 'test');
+        shopClient.setChannelToken(NO_AUTOJOIN_CHANNEL_TOKEN);
+
+        const { addItemToOrder } = await shopClient.query(addItemToOrderDocument, {
+            productVariantId: 'T_1',
+            quantity: 1,
+        });
+        if (!('customer' in addItemToOrder)) {
+            throw new Error(`addItemToOrder failed: ${JSON.stringify(addItemToOrder)}`);
+        }
+        expect(addItemToOrder.customer).toBeNull();
         expect(await channelMembers(NO_AUTOJOIN_CHANNEL_TOKEN)).not.toContain(customer.emailAddress);
     });
 
