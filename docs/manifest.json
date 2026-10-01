@@ -947,61 +947,61 @@
           "title": "Quick Start",
           "slug": "quick-start",
           "file": "docs/guides/mcp-server/quick-start/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         },
         {
           "title": "OAuth & Consent",
           "slug": "oauth-consent",
           "file": "docs/guides/mcp-server/oauth-consent/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         },
         {
           "title": "Assistant inside Vendure",
           "slug": "assistant-inside-vendure",
           "file": "docs/guides/mcp-server/assistant-inside-vendure/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         },
         {
           "title": "Assistant outside Vendure",
           "slug": "assistant-outside-vendure",
           "file": "docs/guides/mcp-server/assistant-outside-vendure/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         },
         {
           "title": "Registering Custom Tools",
           "slug": "custom-tools",
           "file": "docs/guides/mcp-server/custom-tools/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         },
         {
           "title": "Production Hardening",
           "slug": "production",
           "file": "docs/guides/mcp-server/production/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         },
         {
           "title": "Logging & Observability",
           "slug": "observability",
           "file": "docs/guides/mcp-server/observability/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         },
         {
           "title": "Administration",
           "slug": "administration",
           "file": "docs/guides/mcp-server/administration/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         },
         {
           "title": "Built-in Tool Reference",
           "slug": "built-in-tools",
           "file": "docs/guides/mcp-server/built-in-tools/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         },
         {
           "title": "OAuth Protocol Reference",
           "slug": "oauth-reference",
           "file": "docs/guides/mcp-server/oauth-reference/index.mdx",
-          "lastModified": "2026-09-29T10:57:44+02:00"
+          "lastModified": "2026-10-01T12:32:35+02:00"
         }
       ]
     },
