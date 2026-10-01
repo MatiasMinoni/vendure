@@ -29,16 +29,25 @@ const SQLITE_REGEXP_DB_TYPES: VendureDatabaseType[] = ['better-sqlite3', 'sqljs'
 let re2js: typeof import('re2js') | undefined;
 
 /**
+ * Upper bound on the number of compiled patterns kept by {@link buildRegexpTester}. Patterns are
+ * user-supplied, so the cache must not grow without limit.
+ */
+const REGEXP_CACHE_MAX_SIZE = 100;
+
+/**
  * Resolves `re2js` on first use rather than at import time. `parse-filter-params.ts` imports this
  * module, and that file is on the path of every list query on every backend, so a top-level import
- * would make a Postgres or MySQL deployment parse 246 kB of engine it can never reach.
+ * would make a Postgres or MySQL deployment load an engine it can never reach.
+ *
+ * A load failure is thrown as-is. There is deliberately no fallback to the built-in `RegExp`
+ * engine, which would reopen the ReDoS this engine exists to prevent.
  */
-function getRE2JS(): typeof RE2JS {
+function loadRE2JS(): typeof import('re2js') {
     if (!re2js) {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         re2js = require('re2js') as typeof import('re2js');
     }
-    return re2js.RE2JS;
+    return re2js;
 }
 
 /**
@@ -60,7 +69,7 @@ export class Re2jsRegExp implements CompiledRegExp {
      * parameter exists to keep the built-in `RegExp` assignable to {@link RegExpEngine}.
      */
     constructor(pattern: string, _flags: SupportedFlags) {
-        const RE2 = getRE2JS();
+        const { RE2JS: RE2 } = loadRE2JS();
         this.compiled = RE2.compile(pattern, RE2.CASE_INSENSITIVE);
     }
 
@@ -83,11 +92,17 @@ export function assertRegexFilterEngineCompatible(pattern: string, dbType: Vendu
     if (!SQLITE_REGEXP_DB_TYPES.includes(dbType)) {
         return;
     }
+    // Loaded outside the try block so that a missing or broken engine surfaces as its own error
+    // rather than being reported to the caller as unsupported pattern syntax.
+    const { RE2JSException } = loadRE2JS();
     try {
         // eslint-disable-next-line no-new
         new Re2jsRegExp(pattern, 'i');
-    } catch {
-        throw new UserInputError('error.regex-filter-pattern-unsupported-syntax');
+    } catch (e) {
+        if (e instanceof RE2JSException) {
+            throw new UserInputError('error.regex-filter-pattern-unsupported-syntax');
+        }
+        throw e;
     }
 }
 
@@ -116,8 +131,7 @@ export function buildRegexpTester(
         let compiled = cache.get(pattern);
         if (!compiled) {
             compiled = new Engine(pattern, 'i');
-            // Bound the cache: patterns are user-supplied, so cap unbounded growth.
-            if (cache.size >= 100) {
+            if (cache.size >= REGEXP_CACHE_MAX_SIZE) {
                 cache.clear();
             }
             cache.set(pattern, compiled);
