@@ -55,9 +55,10 @@ function loadRE2JS(): typeof import('re2js') {
  * matches in linear time, but the cost per input character grows with the program size, and on
  * SQLite that cost is paid for every row on the Node.js event loop. A pattern such as `.{999}`
  * stays under the length cap and compiles to over a thousand instructions, so it is rejected here.
- * Typical filter patterns compile to well under 100.
+ * The limit sits above the largest program a literal or alternation can compile to within the
+ * 100-character length cap (about 102), so only repeats such as `.{200}` reach it.
  */
-export const MAX_REGEX_PROGRAM_SIZE = 100;
+export const MAX_REGEX_PROGRAM_SIZE = 128;
 
 /**
  * Escapes which `RE2JS.translateRegExp()` passes through to RE2, where they mean something other
@@ -74,6 +75,7 @@ const ESCAPES_WITH_RE2_MEANING = new Set(['A', 'z', 'Q', 'E', 'a']);
  *   literal text `k<name>`.
  * - `\A`, `\z`, `\Q`, `\E` and `\a` are literal letters in JavaScript but anchors, quoting or the
  *   bell character in RE2.
+ * - `\x{41}` is `x` repeated 41 times in JavaScript but the code point `A` in RE2.
  * - `[]` and `[^]` are complete classes in JavaScript (match nothing, match anything). In RE2 a `]`
  *   straight after `[` or `[^` is a literal, so `[^]]` means "not `]`".
  * - `[:` inside a class is literal in JavaScript but starts a POSIX class such as `[:alpha:]` in RE2.
@@ -87,8 +89,11 @@ function findChangedMeaning(pattern: string): string | undefined {
             if (next === 'k' && pattern[i + 2] === '<') {
                 return 'named backreferences are not supported';
             }
-            if (next !== undefined && ESCAPES_WITH_RE2_MEANING.has(next)) {
+            if (ESCAPES_WITH_RE2_MEANING.has(next)) {
                 return `\\${next} has a different meaning in RE2`;
+            }
+            if (next === 'x' && pattern[i + 2] === '{') {
+                return '\\x{...} has a different meaning in RE2';
             }
             // Skip the escaped character, so that `\\k<` (an escaped backslash) is not matched.
             i++;
@@ -171,7 +176,9 @@ export function assertRegexFilterEngineCompatible(pattern: string, dbType: Vendu
         // eslint-disable-next-line no-new
         new Re2jsRegExp(pattern, 'i');
     } catch (e) {
-        // Only a parse error is the pattern's fault. Anything else is a fault in the engine.
+        // A syntax exception covers both RE2 parse errors and the constructs rejected by
+        // findChangedMeaning(). Anything else is rethrown as-is: the program size UserInputError
+        // already carries its own message, and any other error is a fault in the engine.
         if (e instanceof RE2JSSyntaxException) {
             throw new UserInputError('error.regex-filter-pattern-unsupported-syntax');
         }
