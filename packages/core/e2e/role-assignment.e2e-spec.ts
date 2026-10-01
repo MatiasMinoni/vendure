@@ -602,11 +602,15 @@ describe('RoleAssignment', () => {
             subject = createAdministrator;
         });
 
-        it('User.roleAssignments is filtered to what the actor may grant', async () => {
+        // GHSA-37j3-p93w-fq6w — an Administrator holding one assignment the actor may not grant
+        // is outside the actor's authority, so it is not returned at all.
+        it('an Administrator holding an assignment the actor may not grant is hidden', async () => {
             await asChannelAdminOnSecondChannel();
-            const assignments = await getUserRoleAssignments(subject.id);
+            const { administrator } = await adminClient.query(administratorRoleAssignmentsDocument, {
+                id: subject.id,
+            });
 
-            expect(assignments).toEqual([{ roleCode: adminManagerRole.code, channelId: secondChannel.id }]);
+            expect(administrator).toBeNull();
         });
 
         it('the roleAssignments list is filtered and counts only visible assignments', async () => {
@@ -650,13 +654,14 @@ describe('RoleAssignment', () => {
         });
 
         // The deprecated roleIds replace-set fails closed: omitting a pair the actor cannot
-        // see would revoke it, so the update is refused as a whole.
+        // see would revoke it. The subject holds that pair, so it is outside the actor's
+        // authority and the update is refused before any pair is looked at.
         it('the deprecated roleIds input fails when it omits a pair the actor cannot see', async () => {
             await assertThrowsWithMessage(async () => {
                 await adminClient.query(updateAdministratorDocument, {
                     input: { id: subject.id, roleIds: [adminManagerRole.id] },
                 });
-            }, 'Active user does not have sufficient permissions')();
+            }, `No Administrator with the id "${subject.id.replace('T_', '')}" could be found`)();
 
             await asSuperAdminOnDefaultChannel();
             const assignments = await getUserRoleAssignments(subject.id);

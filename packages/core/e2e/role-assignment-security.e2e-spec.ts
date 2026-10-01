@@ -1044,7 +1044,10 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
 
         beforeAll(async () => {
             await asSuper();
+            // Holds R1's permissions, so delA has authority over an Administrator holding R1 on A.
             await createRole('RDA', [
+                Permission.ReadCatalog,
+                Permission.UpdateCatalog,
                 Permission.ReadAdministrator,
                 Permission.DeleteAdministrator,
                 Permission.ReadApiKey,

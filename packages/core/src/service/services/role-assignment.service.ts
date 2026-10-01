@@ -143,6 +143,25 @@ export class RoleAssignmentService {
 
     /**
      * @description
+     * Whether the active user has authority over the given User: true iff they may grant
+     * ({@link RoleService.canGrant}) every RoleAssignment the User holds. A User holding no
+     * assignments is in anyone's authority, and a SuperAdmin target is in a SuperAdmin's only.
+     * This decides which Administrators the active user may see, update and delete.
+     *
+     * @since 4.0.0
+     */
+    async activeUserCanManageUser(ctx: RequestContext, userId: ID): Promise<boolean> {
+        const assignments = await this.getAssignmentsForUser(ctx, userId);
+        for (const assignment of assignments) {
+            if (!(await this.roleService.canGrant(ctx, assignment.roleId, assignment.channelId))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @description
      * Resolves the effective permissions of the given User. See {@link RolePermissionResolver}.
      */
     resolvePermissions(userId: ID): Promise<ResolvedUserPermissions> {

@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import {
     CreateAdministratorInput,
     DeletionResult,
+    Permission,
     UpdateAdministratorInput,
 } from '@vendure/common/lib/generated-types';
 import { ID, PaginatedList } from '@vendure/common/lib/shared-types';
-import { IsNull } from 'typeorm';
+import { unique } from '@vendure/common/lib/unique';
+import { IsNull, NotBrackets, SelectQueryBuilder } from 'typeorm';
 
 import { RequestContext } from '../../api/common/request-context';
 import { RelationPaths } from '../../api/decorators/relations.decorator';
@@ -17,6 +19,7 @@ import { ConfigService } from '../../config';
 import { TransactionalConnection } from '../../connection/transactional-connection';
 import { Administrator } from '../../entity/administrator/administrator.entity';
 import { NativeAuthenticationMethod } from '../../entity/authentication-method/native-authentication-method.entity';
+import { RoleAssignment } from '../../entity/role-assignment/role-assignment.entity';
 import { User } from '../../entity/user/user.entity';
 import { EventBus } from '../../event-bus';
 import { AdministratorEvent } from '../../event-bus/events/administrator-event';
@@ -62,45 +65,55 @@ export class AdministratorService {
 
     /**
      * @description
-     * Get a paginated list of Administrators.
+     * Get a paginated list of the Administrators the active user has authority over
+     * ({@link RoleAssignmentService.activeUserCanManageUser}).
      */
-    findAll(
+    async findAll(
         ctx: RequestContext,
         options?: ListQueryOptions<Administrator>,
         relations?: RelationPaths<Administrator>,
     ): Promise<PaginatedList<Administrator>> {
-        return this.listQueryBuilder
-            .build(Administrator, options, {
-                relations: relations ?? ['user'],
-                where: { deletedAt: IsNull() },
-                ctx,
-            })
-            .getManyAndCount()
-            .then(([items, totalItems]) => ({
-                items,
-                totalItems,
-            }));
+        const qb = this.listQueryBuilder.build(Administrator, options, {
+            relations: relations ?? ['user'],
+            where: { deletedAt: IsNull() },
+            ctx,
+        });
+        await this.restrictToManageableAdministrators(ctx, qb);
+        const [items, totalItems] = await qb.getManyAndCount();
+        return { items, totalItems };
     }
 
     /**
      * @description
      * Get an Administrator by id.
+     *
+     * Resolves to `undefined` if the active user has no authority over the Administrator
+     * ({@link RoleAssignmentService.activeUserCanManageUser}), so that a caller cannot
+     * confirm the existence of an Administrator they are not allowed to see. update(),
+     * assignRole() and softDelete() look the target up through this method, so the same rule
+     * decides who may modify an Administrator.
      */
-    findOne(
+    async findOne(
         ctx: RequestContext,
         administratorId: ID,
         relations?: RelationPaths<Administrator>,
     ): Promise<Administrator | undefined> {
-        return this.connection
-            .getRepository(ctx, Administrator)
-            .findOne({
-                relations: relations ?? ['user'],
-                where: {
-                    id: administratorId,
-                    deletedAt: IsNull(),
-                },
-            })
-            .then(result => result ?? undefined);
+        const administrator = await this.connection.getRepository(ctx, Administrator).findOne({
+            // The User is always loaded, since it is what the authority check is based on.
+            relations: unique([...(relations ?? []), 'user']),
+            where: {
+                id: administratorId,
+                deletedAt: IsNull(),
+            },
+        });
+        if (!administrator) {
+            return undefined;
+        }
+        const manageable = await this.roleAssignmentService.activeUserCanManageUser(
+            ctx,
+            administrator.user.id,
+        );
+        return manageable ? administrator : undefined;
     }
 
     /**
@@ -239,9 +252,10 @@ export class AdministratorService {
      * ({@link RoleAssignmentService.removeAllAssignmentsForUser}).
      */
     async softDelete(ctx: RequestContext, id: ID) {
-        const administrator = await this.connection.getEntityOrThrow(ctx, Administrator, id, {
-            relations: ['user'],
-        });
+        const administrator = await this.findOne(ctx, id);
+        if (!administrator) {
+            throw new EntityNotFoundError('Administrator', id);
+        }
         if (await this.roleAssignmentService.isSoleSuperAdminHolder(ctx, administrator.user.id)) {
             throw new InternalServerError('error.cannot-delete-sole-superadmin');
         }
@@ -252,6 +266,50 @@ export class AdministratorService {
         return {
             result: DeletionResult.DELETED,
         };
+    }
+
+    /**
+     * Restricts a list query to the Administrators the active user has authority over, by the
+     * rule of {@link RoleAssignmentService.activeUserCanManageUser}. The restriction is applied
+     * to the query rather than to its result, so that `totalItems`, sorting, filtering and
+     * pagination all operate over the visible Administrators only.
+     */
+    private async restrictToManageableAdministrators(
+        ctx: RequestContext,
+        qb: SelectQueryBuilder<Administrator>,
+    ) {
+        // canGrant holds for every pair for a SuperAdmin, so the sub-query below would exclude
+        // nobody. This early return only saves the query.
+        if (ctx.userHasPermissions([Permission.SuperAdmin])) {
+            return;
+        }
+        const grantable = await this.roleService.getGrantableChannelIdsByRole(ctx);
+        // An Administrator is excluded as soon as they hold a single assignment the active user
+        // may not grant. A sub-query is used rather than a join on the main query, so that the
+        // Administrator rows are not duplicated by their assignments.
+        qb.andWhere(outerQb => {
+            const hiddenAdministratorsQuery = outerQb
+                .subQuery()
+                .select('hidden_administrator.id')
+                .from(Administrator, 'hidden_administrator')
+                .innerJoin('hidden_administrator.user', 'hidden_user')
+                .innerJoin(RoleAssignment, 'hidden_assignment', 'hidden_assignment.userId = hidden_user.id');
+            // With nothing grantable, every assignment is hidden, so no condition is needed.
+            if (grantable.length) {
+                hiddenAdministratorsQuery.where(
+                    new NotBrackets(grantableQb => {
+                        grantable.forEach(({ roleId, channelIds }, i) => {
+                            grantableQb.orWhere(
+                                `(hidden_assignment.roleId = :grantableRole${i} AND hidden_assignment.channelId IN (:...grantableChannels${i}))`,
+                                { [`grantableRole${i}`]: roleId, [`grantableChannels${i}`]: channelIds },
+                            );
+                        });
+                    }),
+                );
+            }
+            const administratorId = `${outerQb.escape(outerQb.alias)}.${outerQb.escape('id')}`;
+            return `${administratorId} NOT IN ${hiddenAdministratorsQuery.getQuery()}`;
+        });
     }
 
     /**
