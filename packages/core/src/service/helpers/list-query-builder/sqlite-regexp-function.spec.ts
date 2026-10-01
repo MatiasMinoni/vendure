@@ -26,8 +26,8 @@ function timeMs(run: () => void): number {
 }
 
 describe('Re2jsRegExp', () => {
-    // The one line of adapter logic, asserted directly: `re2js` is a caret range, so a minor
-    // release can move `compile`, `matcher` or `find` and this is where that should fail.
+    // The one line of adapter logic, asserted directly: `re2js` is a tilde range, so a patch
+    // release can still move `compile`, `matcher` or `find` and this is where that should fail.
     it('matches case-insensitively anywhere in the value', () => {
         expect(new Re2jsRegExp('foo', 'i').test('a FOO b')).toBe(true);
         expect(new Re2jsRegExp('^bar$', 'i').test('BAR')).toBe(true);
