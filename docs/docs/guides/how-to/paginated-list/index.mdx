@@ -277,12 +277,21 @@ Where you need `regex`, the database decides what one pattern can cost. PostgreS
 avoids most catastrophic backtracking and evaluates the pattern inside the database server. SQLite
 and SQL.js match with the [RE2](https://github.com/google/re2) engine, which runs in linear time.
 MariaDB and MySQL match with a backtracking engine inside the database server, so a slow pattern
-makes that query slow but does not block the Vendure server.
+keeps a database connection busy until it finishes. MySQL 8 caps this with the `regexp_time_limit`
+system variable. MariaDB exposes no equivalent setting.
 
-RE2 does not support all JavaScript regex syntax. It rejects lookaround (`(?=`, `(?!`, `(?<=`,
-`(?<!`), backreferences (`\1`, `\k<name>`), `\uXXXX` escapes (use `\x{XXXX}` instead), `\cX`
-control escapes and `[^]`. On SQLite and SQL.js a filter which uses any of these is rejected with
-an error rather than failing part-way through the query.
+On SQLite and SQL.js, Vendure translates the JavaScript escapes `\uXXXX`, `\u{...}` and `\cX` to
+RE2 syntax, so they keep working. RE2 rejects some other JavaScript regex syntax: lookaround (`(?=`,
+`(?!`, `(?<=`, `(?<!`), backreferences (`\1`, `\k<name>`), `[^]`, and repeat counts above 1000
+(such as `a{1001}`). A filter which uses any of these is rejected with an error rather than failing
+part-way through the query.
+
+A few patterns also match differently under RE2 than under the JavaScript `RegExp` engine:
+
+- `.` matches `\r`. In JavaScript it does not.
+- `\p{L}` and other `\p{...}` classes match Unicode properties. Without the `u` flag, JavaScript
+  reads them as the literal text `p{L}`.
+- A `NULL` column never matches. The `RegExp` engine tested it as the string `"null"`.
 
 ## Filtering by custom properties
 
