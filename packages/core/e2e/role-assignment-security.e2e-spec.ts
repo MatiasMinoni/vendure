@@ -166,6 +166,13 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
         return roleAssignments.items.map(a => `${a.role.code}@${a.channelId}`).sort();
     }
     type Pair = { roleId: string; channelId: string };
+    async function apiKeyUserId(apiKeyId: string, channelToken = A_TOKEN) {
+        superClient.setChannelToken(channelToken);
+        const { apiKey } = await superClient.query(apiKeyUserDocument, { id: apiKeyId });
+        superClient.setChannelToken(A_TOKEN);
+        if (!apiKey) throw new Error(`API key ${apiKeyId} not found`);
+        return apiKey.user.id;
+    }
     const grant = (userId: string, assignments: Pair[]) =>
         adminClient.query(assignRolesToUserDocument, { input: { userId, assignments } });
     const revoke = (userId: string, assignments: Pair[]) =>
@@ -410,6 +417,95 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
                 }),
             );
             record(S, 'createApiKey cross-channel', 'deny', r);
+        });
+
+        it('adminA createAdministrator with legacy roleIds outside its envelope', async () => {
+            const r = await attempt(() =>
+                adminClient.query(createAdministratorDocument, {
+                    input: {
+                        firstName: 'Legacy',
+                        lastName: 'Ghost',
+                        emailAddress: 'legacy-ghost@sec.test',
+                        password: PASSWORD,
+                        roleIds: [roles.RDEL.id],
+                    },
+                }),
+            );
+            const { administrators } = await adminClient.query(getAdministratorsDocument, {
+                options: { filter: { emailAddress: { eq: 'legacy-ghost@sec.test' } } },
+            });
+            record(
+                S,
+                'createAdministrator(roleIds) unheld permission',
+                'deny',
+                r,
+                `ghost rows=${administrators.totalItems}`,
+            );
+            expect(administrators.totalItems).toBe(0);
+        });
+
+        it('adminA createAdministrator with legacy roleIds grants on the active channel only', async () => {
+            const r = await attempt(() =>
+                adminClient.query(createAdministratorDocument, {
+                    input: {
+                        firstName: 'Legacy',
+                        lastName: 'Admin',
+                        emailAddress: 'legacy-admin@sec.test',
+                        password: PASSWORD,
+                        roleIds: [roles.R1.id],
+                    },
+                }),
+            );
+            const userId = r.ok ? r.value.createAdministrator.user.id : undefined;
+            const after = userId ? await assignmentsOf(userId) : [];
+            record(S, 'createAdministrator(roleIds) in envelope', 'allow', r, `after=${after.join(',')}`);
+            expect(after).toEqual([`R1@${A}`]);
+            if (r.ok) {
+                await superClient.query(deleteAdministratorDocument, { id: r.value.createAdministrator.id });
+            }
+        });
+
+        it('adminA createApiKey with legacy roleIds outside its envelope', async () => {
+            const r = await attempt(() =>
+                adminClient.query(createApiKeyDocument, {
+                    input: {
+                        roleIds: [roles.RDEL.id],
+                        translations: [{ languageCode: LanguageCode.en, name: 'legacy ghost key' }],
+                    },
+                }),
+            );
+            record(S, 'createApiKey(roleIds) unheld permission', 'deny', r);
+        });
+
+        it('adminA createApiKey with legacy roleIds grants on the active channel only', async () => {
+            const r = await attempt(() =>
+                adminClient.query(createApiKeyDocument, {
+                    input: {
+                        roleIds: [roles.R1.id],
+                        translations: [{ languageCode: LanguageCode.en, name: 'legacy key' }],
+                    },
+                }),
+            );
+            const keyId = r.ok ? r.value.createApiKey.entityId : undefined;
+            const after = keyId ? await assignmentsOf(await apiKeyUserId(keyId)) : [];
+            record(S, 'createApiKey(roleIds) in envelope', 'allow', r, `after=${after.join(',')}`);
+            expect(after).toEqual([`R1@${A}`]);
+            if (keyId) await superClient.query(deleteApiKeysDocument, { ids: [keyId] });
+        });
+
+        it('adminA createApiKey with legacy roleIds on token B', async () => {
+            await as('adminA', B_TOKEN);
+            const r = await attempt(() =>
+                adminClient.query(createApiKeyDocument, {
+                    input: {
+                        roleIds: [roles.R1.id],
+                        translations: [{ languageCode: LanguageCode.en, name: 'legacy key on B' }],
+                    },
+                }),
+            );
+            record(S, 'createApiKey(roleIds) on a channel without CreateApiKey', 'deny', r);
+            if (!r.ok) expect(r.message).toContain(FORBIDDEN);
+            await as('adminA');
         });
     });
 
@@ -1193,6 +1289,26 @@ const updateApiKeyDocument = graphql(`
     mutation SecUpdateApiKey($input: UpdateApiKeyInput!) {
         updateApiKey(input: $input) {
             id
+        }
+    }
+`);
+
+const apiKeyUserDocument = graphql(`
+    query SecApiKeyUser($id: ID!) {
+        apiKey(id: $id) {
+            id
+            user {
+                id
+            }
+        }
+    }
+`);
+
+const deleteApiKeysDocument = graphql(`
+    mutation SecDeleteApiKeys($ids: [ID!]!) {
+        deleteApiKeys(ids: $ids) {
+            result
+            message
         }
     }
 `);
