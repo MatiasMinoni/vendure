@@ -127,6 +127,12 @@ Whether the given User is the only non-deleted Administrator holding the SuperAd
 Role. There must always be one, otherwise full administration through the API is no
 longer possible: `remove` and the Administrator soft-delete both refuse to break
 this.
+
+Takes a write lock on the SuperAdmin Role row before counting, held until the
+surrounding transaction commits. Two SuperAdmins removing or deleting each other at
+the same time would otherwise both count two holders and leave none. Call it inside the
+transaction which performs the write. On SQLite the lock is not supported; SQLite
+serializes writes itself.
 ### assign
 
 <MemberInfo kind="method" type={`(ctx: <a href='/reference/typescript-api/request/request-context#requestcontext'>RequestContext</a>, userId: <a href='/reference/typescript-api/common/id#id'>ID</a>, pairs: <a href='/reference/typescript-api/services/role-assignment-service#rolechannelpair'>RoleChannelPair</a>[]) => Promise<<a href='/reference/typescript-api/entities/role-assignment#roleassignment'>RoleAssignment</a>[]>`}  since="4.0.0"  />
