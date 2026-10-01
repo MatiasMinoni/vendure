@@ -2,7 +2,7 @@
 
 #### Security
 
-* **core** `regex` list filters on SQLite and SQL.js are evaluated by the RE2 engine, which matches in linear time and so cannot be exploited for ReDoS. The engine ships as `re2js`, which installs with `@vendure/core` and has no build step. Breaking change on SQLite and SQL.js: RE2 supports neither lookaround nor backreferences, so a `regex` filter which uses either now returns a `UserInputError` where 3.7.3 matched it with the built-in `RegExp` engine. Rewrite such filters without lookaround or backreferences. Other databases evaluate the pattern themselves and are unaffected.
+* **core** `regex` list filters on SQLite and SQL.js are evaluated by the RE2 engine, which matches in linear time and so cannot be exploited for ReDoS. The engine ships as `re2js`, which installs with `@vendure/core` and has no build step. Breaking change on SQLite and SQL.js: RE2 does not support lookaround, backreferences (including `\k<name>`), `\uXXXX` escapes (use `\x{XXXX}`), `\cX` escapes or `[^]`, so a `regex` filter which uses any of these now returns a `UserInputError` where 3.7.3 matched it with the built-in `RegExp` engine. Rewrite such filters in RE2 syntax. Other databases evaluate the pattern themselves and are unaffected.
 
 #### Features
 
