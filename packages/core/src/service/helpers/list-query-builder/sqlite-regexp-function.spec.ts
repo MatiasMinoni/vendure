@@ -1,3 +1,4 @@
+import { RE2JSSyntaxException } from 're2js';
 import { describe, expect, it } from 'vitest';
 
 import { UserInputError } from '../../../common/error/errors';
@@ -35,7 +36,25 @@ describe('Re2jsRegExp', () => {
     });
 
     it('rejects a pattern RE2 cannot compile', () => {
-        expect(() => new Re2jsRegExp('(?=.*foo)bar', 'i')).toThrow();
+        expect(() => new Re2jsRegExp('(?=.*foo)bar', 'i')).toThrowError(RE2JSSyntaxException);
+    });
+
+    // JavaScript-only escapes are translated to RE2 syntax rather than rejected.
+    it.each([
+        ['\\u0041', 'A'],
+        ['\\u{41}', 'A'],
+        ['\\cA', '\u0001'],
+    ])('translates the JavaScript escape %s', (pattern, value) => {
+        expect(new Re2jsRegExp(`^${pattern}$`, 'i').test(value)).toBe(true);
+    });
+
+    // translateRegExp() would rewrite `\k<n>` to the literal text `k<n>`, so it is rejected first.
+    it('rejects a named backreference instead of matching it literally', () => {
+        expect(() => new Re2jsRegExp('(?<n>a)\\k<n>', 'i')).toThrowError(RE2JSSyntaxException);
+    });
+
+    it('does not mistake an escaped backslash before k< for a named backreference', () => {
+        expect(new Re2jsRegExp('\\\\k<n>', 'i').test('\\k<n>')).toBe(true);
     });
 });
 
@@ -127,7 +146,7 @@ describe('assertRegexFilterEngineCompatible()', () => {
     });
 
     // These are valid JavaScript regex syntax but not RE2 syntax, and are listed in the docs.
-    it.each(['\\u0041', '(?<n>a)\\k<n>', '\\cA', '[^]'])(
+    it.each(['(?<n>a)\\k<n>', '[^]', 'a{1001}'])(
         'rejects the JavaScript-only syntax %s on SQLite backends',
         pattern => {
             expect(() => assertRegexFilterEngineCompatible(pattern, 'sqljs')).toThrowError(UserInputError);
@@ -136,5 +155,9 @@ describe('assertRegexFilterEngineCompatible()', () => {
 
     it('accepts named groups, which RE2 supports', () => {
         expect(() => assertRegexFilterEngineCompatible('(?<word>foo)bar', 'sqljs')).not.toThrow();
+    });
+
+    it.each(['\\u0041', '\\u{1F600}', '\\cA'])('accepts the translated JavaScript escape %s', pattern => {
+        expect(() => assertRegexFilterEngineCompatible(pattern, 'sqljs')).not.toThrow();
     });
 });

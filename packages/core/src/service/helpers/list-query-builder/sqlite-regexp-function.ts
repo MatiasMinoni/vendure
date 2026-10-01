@@ -51,9 +51,31 @@ function loadRE2JS(): typeof import('re2js') {
 }
 
 /**
+ * Whether the pattern contains a JavaScript named backreference such as `\k<name>`. Such a pattern
+ * must be rejected before translation: `RE2JS.translateRegExp()` rewrites `\k` to a literal `k`,
+ * which would silently change what the pattern matches rather than rejecting it.
+ */
+function hasNamedBackreference(pattern: string): boolean {
+    for (let i = 0; i < pattern.length - 2; i++) {
+        if (pattern[i] === '\\') {
+            if (pattern[i + 1] === 'k' && pattern[i + 2] === '<') {
+                return true;
+            }
+            // Skip the escaped character, so that `\\k<` (an escaped backslash) is not matched.
+            i++;
+        }
+    }
+    return false;
+}
+
+/**
  * Adapts `re2js` to the `RegExp` shape used by the rest of this file. `re2js` is a JavaScript port
  * of RE2, so it needs no native build step, but its API is not the `RegExp` one: a pattern is
  * compiled once and then matched through a matcher object.
+ *
+ * The pattern is first passed through `RE2JS.translateRegExp()`, which rewrites JavaScript-only
+ * escapes such as `\uXXXX`, `\u{...}` and `\cX` into their RE2 equivalents. This is a string
+ * rewrite only, so matching stays linear-time.
  *
  * RE2 matches in guaranteed linear time, so no pattern can be driven into the catastrophic
  * backtracking the built-in engine allows. It pays for that by supporting neither lookaround nor
@@ -69,8 +91,11 @@ export class Re2jsRegExp implements CompiledRegExp {
      * parameter exists to keep the built-in `RegExp` assignable to {@link RegExpEngine}.
      */
     constructor(pattern: string, _flags: SupportedFlags) {
-        const { RE2JS: RE2 } = loadRE2JS();
-        this.compiled = RE2.compile(pattern, RE2.CASE_INSENSITIVE);
+        const { RE2JS: RE2, RE2JSSyntaxException } = loadRE2JS();
+        if (hasNamedBackreference(pattern)) {
+            throw new RE2JSSyntaxException('named backreferences are not supported', pattern);
+        }
+        this.compiled = RE2.compile(RE2.translateRegExp(pattern), RE2.CASE_INSENSITIVE);
     }
 
     /** `find()` searches anywhere in the value, which is what `RegExp.test()` does. */
