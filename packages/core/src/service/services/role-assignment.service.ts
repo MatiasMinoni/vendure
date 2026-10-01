@@ -449,6 +449,29 @@ export class RoleAssignmentService {
         await this.removeRows(ctx, user, existing);
     }
 
+    /**
+     * @description
+     * Deletes every RoleAssignment on the given Channel, and publishes one `removed`
+     * {@link RoleAssignmentEvent} per affected User. Call it before the Channel row is
+     * deleted: the foreign key would otherwise cascade the rows away with no event and no
+     * eviction of the affected Users' cached sessions.
+     *
+     * Performs no authorization and no sole-SuperAdmin guard: this is the primitive behind
+     * the Channel delete. The SuperAdmin row lives on the default Channel, which cannot be
+     * deleted.
+     *
+     * @since 4.0.0
+     */
+    async removeAllAssignmentsOnChannel(ctx: RequestContext, channelId: ID): Promise<void> {
+        const rows = await this.connection
+            .getRepository(ctx, RoleAssignment)
+            .find({ where: { channelId }, relations: { user: true } });
+        for (const userId of unique(rows.map(row => row.userId))) {
+            const userRows = rows.filter(row => idsAreEqual(row.userId, userId));
+            await this.removeRows(ctx, userRows[0].user, userRows);
+        }
+    }
+
     private async removeRows(ctx: RequestContext, user: User, rows: RoleAssignment[]): Promise<void> {
         if (!rows.length) {
             return;
