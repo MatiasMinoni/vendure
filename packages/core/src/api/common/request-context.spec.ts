@@ -252,7 +252,10 @@ describe('RequestContext', () => {
             ]);
             expect(ctx.userHasAllPermissions([Permission.ReadProduct, Permission.UpdateProduct])).toBe(false);
             expect(
-                ctx.userHasAllPermissions([Permission.ReadProduct, Permission.UpdateProduct], OTHER_CHANNEL_ID),
+                ctx.userHasAllPermissions(
+                    [Permission.ReadProduct, Permission.UpdateProduct],
+                    OTHER_CHANNEL_ID,
+                ),
             ).toBe(true);
         });
 
