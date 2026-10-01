@@ -3,7 +3,7 @@ import { Permission } from '@vendure/common/lib/generated-types';
 import { DEFAULT_CHANNEL_CODE } from '@vendure/common/lib/shared-constants';
 import { ID, PaginatedList } from '@vendure/common/lib/shared-types';
 import { unique } from '@vendure/common/lib/unique';
-import { In, IsNull } from 'typeorm';
+import { In, IsNull, LockNotSupportedOnGivenDriverError } from 'typeorm';
 
 import { RequestContext } from '../../api/common/request-context';
 import { RelationPaths } from '../../api/decorators/relations.decorator';
@@ -195,10 +195,28 @@ export class RoleAssignmentService {
      * longer possible: {@link remove} and the Administrator soft-delete both refuse to break
      * this.
      *
+     * Takes a write lock on the SuperAdmin Role row before counting, held until the
+     * surrounding transaction commits. Two SuperAdmins removing or deleting each other at
+     * the same time would otherwise both count two holders and leave none. Call it inside the
+     * transaction which performs the write. On SQLite the lock is not supported; SQLite
+     * serializes writes itself.
+     *
      * @since 4.0.0
      */
     async isSoleSuperAdminHolder(ctx: RequestContext, userId: ID): Promise<boolean> {
         const superAdminRole = await this.roleService.getSuperAdminRole(ctx);
+        try {
+            await this.connection
+                .getRepository(ctx, Role)
+                .createQueryBuilder('role')
+                .setLock('pessimistic_write')
+                .where('role.id = :id', { id: superAdminRole.id })
+                .getOne();
+        } catch (e) {
+            if (!(e instanceof LockNotSupportedOnGivenDriverError)) {
+                throw e;
+            }
+        }
         const holderIds = await this.resolveUserIdsWithRole(ctx, superAdminRole.id);
         if (!holderIds.some(id => idsAreEqual(id, userId))) {
             return false;
