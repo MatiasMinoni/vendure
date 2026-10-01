@@ -60,6 +60,7 @@ class RoleAssignmentService {
     findAll(ctx: RequestContext, options?: ListQueryOptions<RoleAssignment>, relations?: RelationPaths<RoleAssignment>) => Promise<PaginatedList<RoleAssignment>>;
     getAssignmentsForUser(ctx: RequestContext, userId: ID) => Promise<RoleAssignment[]>;
     getGrantableAssignmentsForUser(ctx: RequestContext, userId: ID) => Promise<RoleAssignment[]>;
+    activeUserCanManageUser(ctx: RequestContext, userId: ID) => Promise<boolean>;
     resolvePermissions(userId: ID) => Promise<ResolvedUserPermissions>;
     resolveUserRoles(ctx: RequestContext, userId: ID) => Promise<Role[]>;
     resolveUserIdsWithRole(ctx: RequestContext, roleId: ID) => Promise<ID[]>;
@@ -72,6 +73,7 @@ class RoleAssignmentService {
     createAssignments(ctx: RequestContext, userId: ID, pairs: RoleChannelPair[]) => Promise<void>;
     deleteAssignments(ctx: RequestContext, userId: ID, pairs: RoleChannelPair[]) => Promise<void>;
     removeAllAssignmentsForUser(ctx: RequestContext, userId: ID) => Promise<void>;
+    removeAllAssignmentsOnChannel(ctx: RequestContext, channelId: ID) => Promise<void>;
 }
 ```
 
@@ -98,6 +100,14 @@ what the active user may see of them, use `getGrantableAssignmentsForUser`.
 Returns the RoleAssignments of the given User which the active user may grant or
 remove (`RoleService.canGrant`). This is what `User.roleAssignments` resolves to
 in the Admin API.
+### activeUserCanManageUser
+
+<MemberInfo kind="method" type={`(ctx: <a href='/reference/typescript-api/request/request-context#requestcontext'>RequestContext</a>, userId: <a href='/reference/typescript-api/common/id#id'>ID</a>) => Promise<boolean>`}  since="4.0.0"  />
+
+Whether the active user has authority over the given User: true iff they may grant
+(`RoleService.canGrant`) every RoleAssignment the User holds. A User holding no
+assignments is in anyone's authority, and a SuperAdmin target is in a SuperAdmin's only.
+This decides which Administrators the active user may see, update and delete.
 ### resolvePermissions
 
 <MemberInfo kind="method" type={`(userId: <a href='/reference/typescript-api/common/id#id'>ID</a>) => Promise<<a href='/reference/typescript-api/auth/resolved-user-permissions#resolveduserpermissions'>ResolvedUserPermissions</a>>`}   />
@@ -219,6 +229,18 @@ Performs no authorization and no sole-SuperAdmin guard: this is the primitive be
 the Administrator and API-Key soft-deletes, which must clear the rows of the deleted
 User. Left in place, those rows would keep counting towards the Channels a Role is
 assigned on (see [RoleService](/reference/typescript-api/services/role-service#roleservice)) and so keep gating the Role for live administrators.
+### removeAllAssignmentsOnChannel
+
+<MemberInfo kind="method" type={`(ctx: <a href='/reference/typescript-api/request/request-context#requestcontext'>RequestContext</a>, channelId: <a href='/reference/typescript-api/common/id#id'>ID</a>) => Promise<void>`}  since="4.0.0"  />
+
+Deletes every RoleAssignment on the given Channel, and publishes one `removed`
+[RoleAssignmentEvent](/reference/typescript-api/events/event-types#roleassignmentevent) per affected User. Call it before the Channel row is
+deleted: the foreign key would otherwise cascade the rows away with no event and no
+eviction of the affected Users' cached sessions.
+
+Performs no authorization and no sole-SuperAdmin guard: this is the primitive behind
+the Channel delete. The SuperAdmin row lives on the default Channel, which cannot be
+deleted.
 
 
 </div>
