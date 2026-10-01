@@ -280,17 +280,26 @@ MariaDB and MySQL match with a backtracking engine inside the database server, s
 keeps a database connection busy until it finishes. MySQL 8 caps this with the `regexp_time_limit`
 system variable. MariaDB exposes no equivalent setting.
 
-On SQLite and SQL.js, Vendure translates the JavaScript escapes `\uXXXX`, `\u{...}` and `\cX` to
-RE2 syntax, so they keep working. RE2 rejects some other JavaScript regex syntax: lookaround (`(?=`,
-`(?!`, `(?<=`, `(?<!`), backreferences (`\1`, `\k<name>`), `[^]`, and repeat counts above 1000
-(such as `a{1001}`). A filter which uses any of these is rejected with an error rather than failing
-part-way through the query.
+On SQLite and SQL.js, a `regex` filter is rejected with an error, rather than failing part-way
+through the query, if it uses any of the following:
 
-A few patterns also match differently under RE2 than under the JavaScript `RegExp` engine:
+- lookaround: `(?=`, `(?!`, `(?<=`, `(?<!`
+- backreferences: `\1`, `\k<name>`
+- a repeat count above 1000, such as `a{1001}`
+- syntax that RE2 reads differently from JavaScript: `\A`, `\z`, `\Q`, `\E`, `\a`, a class that
+  opens with `[]` or `[^]` (in RE2, `[^]]` means "not `]`"), and POSIX classes such as `[[:alpha:]]`
+- a pattern that compiles to a large RE2 program, such as `.{999}`. RE2 runs in linear time, but
+  the cost per character grows with the program, and SQLite pays it for every row.
 
-- `.` matches `\r`. In JavaScript it does not.
+Vendure translates the JavaScript escapes `\uXXXX` and `\cX` to RE2 syntax, so they match as
+before. Some other patterns match differently under RE2 than under the JavaScript `RegExp` engine:
+
+- `\u{41}` matches the code point `A`. Without the `u` flag, JavaScript read it as `u` repeated 41
+  times.
+- `.` also matches `\r`, `\u2028` and `\u2029`.
+- `\s` matches ASCII whitespace only, so it no longer matches characters such as a non-breaking space.
 - `\p{L}` and other `\p{...}` classes match Unicode properties. Without the `u` flag, JavaScript
-  reads them as the literal text `p{L}`.
+  read them as the literal text `p{L}`.
 - A `NULL` column never matches. The `RegExp` engine tested it as the string `"null"`.
 
 ## Filtering by custom properties
