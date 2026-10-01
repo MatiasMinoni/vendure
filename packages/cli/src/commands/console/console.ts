@@ -24,6 +24,7 @@ import {
     trustedConsoleOrigins,
 } from './console-origins';
 import { ConsoleReporter } from './console-reporter';
+import { ConsoleCommandResult, ConsoleLinkResultContribution } from './console-result';
 import { ensureProjectLinkGitignore } from './project-link-gitignore';
 import {
     ManifestReadResult,
@@ -56,6 +57,8 @@ const MAX_RETRY_DELAY_MS = 2_000;
 export const CALLBACK_GRACE_MS = 2_500;
 
 export interface ConsoleCommandOptions {
+    json?: boolean;
+    nonInteractive?: boolean;
     project?: string;
     force?: boolean;
     /** Answers every confirmation owned by the CLI. */
@@ -160,7 +163,24 @@ export async function consoleCommand(
     options: ConsoleCommandOptions = {},
     dependencies: Partial<ConsoleCommandDependencies> = {},
 ): Promise<number> {
+    const normalizedAction = action?.trim().toLowerCase();
     const resolvedDependencies = { ...createDefaultDependencies(), ...dependencies };
+    // Prompts also stay disabled in JSON mode so stdout contains only the result.
+    if (options.nonInteractive || options.json) {
+        resolvedDependencies.isNonInteractive = () => true;
+    }
+    if (options.json) {
+        const report = (message: string) => {
+            process.stderr.write(`${message}\n`);
+        };
+        resolvedDependencies.reporter = {
+            error: report,
+            info: report,
+            success: report,
+            warn: report,
+            url: report,
+        };
+    }
     const abortController = new AbortController();
     let interruptedExitCode: number | undefined;
     const onSigint = () => {
@@ -181,33 +201,81 @@ export async function consoleCommand(
         externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
     }
 
-    const state: ConsoleCommandState = {};
+    const state: ConsoleCommandState = {
+        result: {
+            schemaVersion: 1,
+            operation:
+                normalizedAction && ['link', 'status', 'unlink'].includes(normalizedAction)
+                    ? `console.${normalizedAction}`
+                    : 'console',
+            outcome: 'failed',
+            data: { plugins: Object.create(null) },
+            missingInputs: [],
+            nextSteps: [],
+        },
+    };
     try {
-        return await runConsoleCommand(action, options, resolvedDependencies, abortController.signal, state);
+        const code = await runConsoleCommand(
+            action,
+            options,
+            resolvedDependencies,
+            abortController.signal,
+            state,
+        );
+        if (state.setupIncomplete) {
+            return 1;
+        }
+        if (code === 0) {
+            state.result.outcome = state.outcome ?? (normalizedAction === 'unlink' ? 'unlinked' : 'read');
+        }
+        return code;
     } catch (error) {
-        if (interruptedExitCode !== undefined || error instanceof CommandInterruptedError) {
-            // A process signal wins so SIGTERM retains exit code 143. Prompt cancellation and external aborts use 130.
-            const exitCode = interruptedExitCode ?? 130;
-            resolvedDependencies.reporter.warn(
-                // Once the manifest is written the link is done and cannot be
-                // taken back, so saying nothing changed would be untrue. An
-                // interrupt after that point stopped a hook, not the link.
-                state.manifestPath && state.outcome
-                    ? `Console command interrupted. ${linkUnfinished(state.outcome, state.manifestPath)}`
-                    : 'Console command interrupted. No Project Link Manifest was changed.',
-            );
-            return exitCode;
-        }
-        if (error instanceof CliCommandExit) {
-            throw error;
-        }
-        resolvedDependencies.reporter.error(error instanceof Error ? error.message : String(error));
-        return 1;
+        return reportConsoleCommandError(
+            error,
+            options,
+            resolvedDependencies.reporter,
+            state,
+            interruptedExitCode,
+        );
     } finally {
         process.removeListener('SIGINT', onSigint);
         process.removeListener('SIGTERM', onSigterm);
         externalSignal?.removeEventListener('abort', onExternalAbort);
+        if (options.json) {
+            process.stdout.write(`${JSON.stringify(state.result)}\n`);
+        }
     }
+}
+
+/** Reports a failure without exposing raw errors in JSON mode. */
+function reportConsoleCommandError(
+    error: unknown,
+    options: ConsoleCommandOptions,
+    reporter: ConsoleReporter,
+    state: ConsoleCommandState,
+    interruptedExitCode: number | undefined,
+): number {
+    state.result.outcome = 'failed';
+    state.result.nextSteps.push('Check the Console configuration and rerun vendure console link.');
+    if (interruptedExitCode !== undefined || error instanceof CommandInterruptedError) {
+        // A process signal wins so SIGTERM retains exit code 143. Prompt cancellation and external aborts use 130.
+        reporter.warn(
+            // An interrupt after the manifest was written stopped setup, not the link.
+            state.manifestPath && state.outcome
+                ? `Console command interrupted. ${linkUnfinished(state.outcome, state.manifestPath)}`
+                : 'Console command interrupted. No Project Link Manifest was changed.',
+        );
+        return interruptedExitCode ?? 130;
+    }
+    if (error instanceof CliCommandExit) {
+        if (options.json) {
+            return error.exitCode || 1;
+        }
+        throw error;
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    reporter.error(options.json ? 'The Console command failed.' : detail);
+    return 1;
 }
 
 /**
@@ -215,6 +283,8 @@ export async function consoleCommand(
  * how much an interrupt took back.
  */
 interface ConsoleCommandState {
+    result: ConsoleCommandResult;
+    setupIncomplete?: boolean;
     /** Set once the Project Link Manifest is on disk, written or reused. */
     manifestPath?: string;
     outcome?: ConsoleLinkOutcome;
@@ -329,6 +399,18 @@ async function link(
             state,
         );
     }
+    const replacementFlag = options.force ? ' --force' : '';
+    if (options.nonInteractive) {
+        state.result.outcome = 'incomplete';
+        state.result.missingInputs.push({ input: 'projectLinkApproval', command: 'vendure console link' });
+        const nextStep =
+            `Run vendure console link --project ${JSON.stringify(projectRoot)}${replacementFlag} ` +
+            'interactively and approve the Project Link. Then rerun this command.';
+        state.result.nextSteps.push(nextStep);
+        dependencies.reporter.error('A Project Link approval is required.');
+        dependencies.reporter.info(nextStep);
+        return 1;
+    }
     if (existing.kind !== 'missing') {
         const confirmed = await confirmManifestChange('replace', existing, options, dependencies);
         if (confirmed !== 'confirmed') {
@@ -368,6 +450,7 @@ async function link(
         const manifestPath = await writeProjectLinkManifestAtomic(projectRoot, manifest);
         state.outcome = 'linked';
         state.manifestPath = manifestPath;
+        state.result.data.link = { outcome: 'linked', manifestPath };
         dependencies.reporter.success(`Linked ${manifest.project.name} to ${manifest.account.name}.`);
         dependencies.reporter.info(`Wrote ${manifestPath}`);
         reportProjectLinkGitignore(projectRoot, dependencies.reporter);
@@ -381,6 +464,7 @@ async function link(
             options,
             dependencies,
             signal,
+            state,
         );
     } finally {
         login?.close();
@@ -569,6 +653,7 @@ async function repair(
     }
     state.outcome = 'repaired';
     state.manifestPath = manifestPath;
+    state.result.data.link = { outcome: 'repaired', manifestPath };
     dependencies.reporter.success(
         `Already linked to ${currentManifest.project.name} in ${currentManifest.account.name}.`,
     );
@@ -585,6 +670,7 @@ async function repair(
         options,
         dependencies,
         signal,
+        state,
     );
 }
 
@@ -638,6 +724,7 @@ async function runConsoleLinkHooks(
     options: ConsoleCommandOptions,
     dependencies: ConsoleCommandDependencies,
     signal: AbortSignal,
+    state: ConsoleCommandState,
 ): Promise<number> {
     for (const { pluginId, hook, requiresSession } of dependencies.hooks) {
         try {
@@ -647,8 +734,27 @@ async function runConsoleLinkHooks(
                     options,
                     dependencies,
                     signal,
+                    contribution => {
+                        const snapshot = structuredClone(contribution);
+                        state.result.data.plugins[pluginId] = snapshot.data;
+                        state.result.missingInputs.push(...(snapshot.missingInputs ?? []));
+                        state.result.nextSteps.push(...(snapshot.nextSteps ?? []));
+                        if (snapshot.outcome !== 'configured') {
+                            if (!state.setupIncomplete || state.result.outcome !== 'failed') {
+                                state.result.outcome = snapshot.outcome;
+                            }
+                            state.setupIncomplete = true;
+                            dependencies.reporter.error(
+                                `The ${pluginId} plugin setup is ${snapshot.outcome}.`,
+                            );
+                            for (const step of snapshot.nextSteps ?? []) dependencies.reporter.info(step);
+                        }
+                    },
                 ),
             );
+            if (state.setupIncomplete) {
+                return 1;
+            }
         } catch (error) {
             // Ctrl-C during a hook is an interrupt whatever the hook threw, so
             // it is reported by the one handler that knows the exit code.
@@ -671,7 +777,10 @@ async function runConsoleLinkHooks(
                 dependencies.reporter.warn(linkUnfinished(inputs.outcome, inputs.manifestPath));
                 throw error;
             }
-            const detail = error instanceof Error ? error.message : String(error);
+            const rawDetail = error instanceof Error ? error.message : String(error);
+            const detail = options.json ? 'Setup did not finish.' : rawDetail;
+            state.result.outcome = 'failed';
+            state.result.nextSteps.push(`Rerun vendure console link to finish setup for ${pluginId}.`);
             dependencies.reporter.error(`The ${pluginId} plugin failed after linking: ${detail}`);
             dependencies.reporter.warn(linkUnfinished(inputs.outcome, inputs.manifestPath));
             return 1;
@@ -686,6 +795,7 @@ function createConsoleLinkContext(
     options: ConsoleCommandOptions,
     dependencies: ConsoleCommandDependencies,
     signal: AbortSignal,
+    contributeResult: (contribution: ConsoleLinkResultContribution) => void,
 ): ConsoleLinkContext {
     const isNonInteractive = dependencies.isNonInteractive();
     return {
@@ -701,10 +811,21 @@ function createConsoleLinkContext(
         session: inputs.session ? structuredClone(inputs.session) : undefined,
         signal,
         reporter: dependencies.reporter,
+        outputMode: options.json ? 'json' : 'human',
+        options: freezeOptions(structuredClone({ ...options })),
+        contributeResult,
         confirm: message => confirmForHook(message, isNonInteractive, dependencies.prompt),
         isNonInteractive,
         force: options.force === true,
     };
+}
+
+function freezeOptions<T>(value: T): T {
+    if (value && typeof value === 'object') {
+        for (const child of Object.values(value)) freezeOptions(child);
+        Object.freeze(value);
+    }
+    return value;
 }
 
 /**
