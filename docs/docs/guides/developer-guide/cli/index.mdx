@@ -32,6 +32,55 @@ The Vendure CLI supports both **interactive** and **non-interactive** modes:
 For guidance on using the CLI together with project instructions for AI coding agents, see the
 [AI-assisted development guide](/guides/developer-guide/ai-assisted-development/).
 
+## The Dev Command
+
+The `dev` command runs the server, worker and Dashboard in development mode. Use a target to run one process:
+
+```bash
+npx vendure dev
+npx vendure dev server
+npx vendure dev --project server
+npx vendure dev server --project ./apps/backend
+```
+
+`server` in `vendure dev server` selects the server process. `--project <dir>` selects the project directory.
+Relative project paths are resolved against the working directory. Entry files and the Vite config are resolved
+from the selected project.
+
+The command resolves the project in this order:
+
+1. Use `--project <dir>` if supplied. The directory must have a `package.json` with `@vendure/core` in
+   `dependencies` or `devDependencies`. An invalid path stops the command.
+2. Use the working directory if its `package.json` depends on `@vendure/core`.
+3. Search members declared in the working directory's `package.json` `workspaces` field. Both
+   `["server"]` and `{ "packages": ["server"] }` are supported, with `*` wildcards such as `apps/*`.
+4. Search immediate members of `packages`, `apps`, `libs`, `services` and `modules` in that order.
+
+If more than one declared workspace member depends on `@vendure/core`, the command lists the candidates and
+asks you to select one with `--project`. If no project is found, the error names the searched directory and
+`--project`.
+
+For a workspace with `"workspaces": ["server"]`, run `vendure dev` or `vendure dev server` from the root.
+Running from inside `server/` also works.
+
+The CLI reads `--project` before it loads plugins and parses the full `dev` command. It reads the plugin
+allowlist from the selected project's `package.json` and resolves plugin packages from that project.
+A plugin must still be a direct project dependency and declare `vendure.cliPlugin`.
+Workspace project discovery also selects the plugin allowlist for other CLI commands. Their own project
+validation and actions keep their existing behavior. From a project subdirectory, plugin lookup walks up
+to the project directory.
+
+
+| Option | Description |
+| --- | --- |
+| `--project <dir>` | Select the Vendure project directory before discovery. |
+| `--server-entry <path>` | Server entry file. Default: `./src/index.ts`. |
+| `--worker-entry <path>` | Worker entry file. Default: `./src/index-worker.ts`. |
+| `--vite-config <path>` | Dashboard Vite config file. Default: Vite config discovery. |
+| `--inspect [host:port]` | Enable the Node.js inspector for the server and worker. |
+| `--inspect-brk [host:port]` | Enable the inspector and pause before user code starts. |
+| `--no-reload` | Disable automatic server and worker restarts. |
+
 ## The Add Command
 
 The `add` command is used to add new entities, resolvers, services, plugins, and more to your Vendure project.
@@ -1187,12 +1236,18 @@ npx vendure plugins add @example/vendure-cli-plugin
 npx vendure plugins remove @example/vendure-cli-plugin
 ```
 
-The CLI finds the project root by walking up from the current directory to the
-nearest `package.json` that configures `vendure.cli` or depends on
-`@vendure/cli`, then scans the `dependencies`, `devDependencies` and
-`optionalDependencies` of every `package.json` between the two. In a monorepo
-that means a plugin installed in a workspace package is found even when
-`@vendure/cli` is hoisted to the workspace root.
+The CLI uses the discovered Core project for the plugin allowlist and package resolution. For `dev`,
+`--project <dir>` selects that project before plugins are loaded. Workspace discovery applies to plugin
+loading for every command, and `vendure plugins add` and `remove` use the discovered member's allowlist.
+From a project subdirectory, lookup walks up to the project. If no Core project is found, lookup keeps
+its existing preference for a parent `package.json` that configures `vendure.cli` or depends on
+`@vendure/cli`. Dependencies between the working directory and that parent remain eligible.
+
+An ambiguous workspace produces a plugin scope error and loads no member's plugins. Help and diagnostic
+commands remain available. Run `dev --project <dir>` to select a member. For project plugin changes,
+run `vendure plugins add` or `remove` from inside the member directory. Explicit `--global` changes
+still use the global allowlist.
+
 
 A package that declares a plugin but is not listed is reported by a one-line
 hint on stderr rather than being loaded:
