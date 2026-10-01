@@ -981,6 +981,105 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
     });
 
     // ------------------------------------------------------------------------------------
+    // deleteAdministrator resolves its target globally: master 3.7.3 limits it to targets the
+    // actor could grant every pair of (GHSA-v85r). That row asserts the ported rule and fails
+    // until the port lands (OSS-845). deleteApiKeys is channel-scoped, and every key
+    // is also on the default channel, so from token A it reaches B's keys as on master.
+    describe('11. deletes across channels', () => {
+        const S = '11-deletes';
+        type Key = { id: string; userId: string };
+        const keys: Record<string, Key> = {};
+
+        async function createKey(name: string, owner: string, channelId: string, channelToken: string) {
+            await as(owner, channelToken);
+            const { createApiKey } = await adminClient.query(createApiKeyDocument, {
+                input: {
+                    roleAssignments: [{ roleId: roles.R1.id, channelId }],
+                    translations: [{ languageCode: LanguageCode.en, name }],
+                },
+            });
+            keys[name] = {
+                id: createApiKey.entityId,
+                userId: await apiKeyUserId(createApiKey.entityId, channelToken),
+            };
+        }
+        const deleteAdmin = (id: string) => adminClient.query(deleteAdministratorDocument, { id });
+        const deleteKey = (id: string) => adminClient.query(deleteApiKeysDocument, { ids: [id] });
+
+        beforeAll(async () => {
+            await asSuper();
+            await createRole('RDA', [
+                Permission.ReadAdministrator,
+                Permission.DeleteAdministrator,
+                Permission.ReadApiKey,
+                Permission.DeleteApiKey,
+            ]);
+            await createAdmin('delA', [{ roleId: roles.RDA.id, channelId: A }]);
+            await createAdmin('targetA', [{ roleId: roles.R1.id, channelId: A }]);
+            await createAdmin('targetB', [{ roleId: roles.R1.id, channelId: B }]);
+            await createAdmin('targetB2', [{ roleId: roles.R1.id, channelId: B }]);
+            await createKey('keyA', 'adminA', A, A_TOKEN);
+            await createKey('keyB', 'adminB', B, B_TOKEN);
+            await createKey('keyB2', 'adminB', B, B_TOKEN);
+            await as('delA');
+        });
+
+        it('delA deletes an A admin', async () => {
+            const r = await attempt(() => deleteAdmin(admins.targetA.id));
+            const after = await assignmentsOf(admins.targetA.userId);
+            record(S, 'deleteAdministrator same channel', 'allow', r, `rows after=${after.join(',')}`);
+            expect(after).toEqual([]);
+        });
+
+        it('delA deletes a B-only admin from token A', async () => {
+            const r = await attempt(() => deleteAdmin(admins.targetB.id));
+            const after = await assignmentsOf(admins.targetB.userId);
+            record(S, 'deleteAdministrator cross-channel', 'deny', r, `rows after=${after.join(',')}`);
+            expect(after).toEqual([`R1@${B}`]);
+        });
+
+        it('delA deletes a B-only admin on token B', async () => {
+            await as('delA', B_TOKEN);
+            const r = await attempt(() => deleteAdmin(admins.targetB2.id));
+            const after = await assignmentsOf(admins.targetB2.userId);
+            record(S, 'deleteAdministrator without DeleteAdministrator on B', 'deny', r);
+            if (!r.ok) expect(r.message).toContain(FORBIDDEN);
+            expect(after).toEqual([`R1@${B}`]);
+            await as('delA');
+        });
+
+        it('delA deletes an A key', async () => {
+            const r = await attempt(() => deleteKey(keys.keyA.id));
+            const after = await assignmentsOf(keys.keyA.userId);
+            record(S, 'deleteApiKeys same channel', 'allow', r, `rows after=${after.join(',')}`);
+            expect(after).toEqual([]);
+        });
+
+        it('delA deletes a B key from token A', async () => {
+            const r = await attempt(() => deleteKey(keys.keyB.id));
+            const after = await assignmentsOf(keys.keyB.userId);
+            record(
+                S,
+                'deleteApiKeys from the default channel',
+                'observe',
+                r,
+                `rows after=${after.join(',')}`,
+            );
+            expect(after).toEqual(r.ok ? [] : [`R1@${B}`]);
+        });
+
+        it('delA deletes a B key on token B', async () => {
+            await as('delA', B_TOKEN);
+            const r = await attempt(() => deleteKey(keys.keyB2.id));
+            const after = await assignmentsOf(keys.keyB2.userId);
+            record(S, 'deleteApiKeys without DeleteApiKey on B', 'deny', r);
+            if (!r.ok) expect(r.message).toContain(FORBIDDEN);
+            expect(after).toEqual([`R1@${B}`]);
+            await as('delA');
+        });
+    });
+
+    // ------------------------------------------------------------------------------------
     describe('2c. sole SuperAdmin (last)', () => {
         const S = '2-removals';
         it('superadmin strips the sole SuperAdmin', async () => {
