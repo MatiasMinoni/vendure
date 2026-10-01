@@ -94,13 +94,13 @@ export function assertRegexFilterEngineCompatible(pattern: string, dbType: Vendu
     }
     // Loaded outside the try block so that a missing or broken engine surfaces as its own error
     // rather than being reported to the caller as unsupported pattern syntax.
-    const { RE2JSException, RE2JSInternalException } = loadRE2JS();
+    const { RE2JSSyntaxException } = loadRE2JS();
     try {
         // eslint-disable-next-line no-new
         new Re2jsRegExp(pattern, 'i');
     } catch (e) {
-        // An internal exception is a fault in the engine itself, not in the pattern.
-        if (e instanceof RE2JSException && !(e instanceof RE2JSInternalException)) {
+        // Only a parse error is the pattern's fault. Anything else is a fault in the engine.
+        if (e instanceof RE2JSSyntaxException) {
             throw new UserInputError('error.regex-filter-pattern-unsupported-syntax');
         }
         throw e;
