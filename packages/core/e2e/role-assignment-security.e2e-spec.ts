@@ -29,6 +29,7 @@ import {
     createRoleDocument,
     deleteAdministratorDocument,
     getAdministratorsDocument,
+    getCustomerListDocument,
     getProductListDocument,
     MeDocument,
     removeRolesFromUserDocument,
@@ -700,20 +701,34 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
             record(S, 'lowA products on B', 'deny', r);
         });
 
-        it('customer on channel B (shop API)', async () => {
+        // The DefaultCustomerChannelAssignmentStrategy joins the customer to B on their first
+        // request there, so activeCustomer resolves because the customer is now a member. A
+        // declined channel resolves them as a guest instead (customer-channel-assignment-strategy
+        // e2e).
+        it('customer on channel B (shop API) is auto-joined by the default strategy', async () => {
+            async function isMemberOfB() {
+                superClient.setChannelToken(B_TOKEN);
+                const { customers } = await superClient.query(getCustomerListDocument);
+                superClient.setChannelToken(A_TOKEN);
+                return customers.items.some(c => c.emailAddress === customer.email);
+            }
+            expect(await isMemberOfB()).toBe(false);
+
             await shopClient.asUserWithCredentials(customer.email, PASSWORD);
             shopClient.setChannelToken(B_TOKEN);
             const r = await attempt(async () => {
                 const { activeCustomer } = await shopClient.query(shopActiveCustomerDocument);
+                if (!activeCustomer) throw new Error('activeCustomer is null');
                 return activeCustomer;
             });
             record(
                 S,
-                'customer activeCustomer on B',
-                'observe',
+                'customer activeCustomer on B (auto-joined)',
+                'allow',
                 r,
                 r.ok ? `activeCustomer=${JSON.stringify(r.value)}` : undefined,
             );
+            expect(await isMemberOfB()).toBe(true);
             shopClient.setChannelToken(A_TOKEN);
         });
 
