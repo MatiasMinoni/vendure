@@ -424,6 +424,25 @@ describe('ListQueryBuilder', () => {
                     expect(testEntities.items).toEqual([]);
                 },
             );
+
+            // Linear in the input, but the cost per character grows with the compiled program,
+            // and `.{999}` fits the length cap.
+            it.skipIf(dbType !== 'sqljs' && dbType !== 'better-sqlite3')(
+                'rejects a pattern whose compiled program is too large',
+                assertThrowsWithMessage(
+                    () =>
+                        adminClient.query(GET_LIST, {
+                            options: {
+                                filter: {
+                                    description: {
+                                        regex: '.{999}',
+                                    },
+                                },
+                            },
+                        }),
+                    'The regex filter pattern is not allowed as it may cause excessive resource consumption',
+                ),
+            );
         });
     });
 

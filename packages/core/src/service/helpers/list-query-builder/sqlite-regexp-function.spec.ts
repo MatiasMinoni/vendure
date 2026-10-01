@@ -7,6 +7,7 @@ import {
     assertRegexFilterEngineCompatible,
     buildRegexpTester,
     createSqliteRegexpFunction,
+    MAX_REGEX_PROGRAM_SIZE,
     Re2jsRegExp,
 } from './sqlite-regexp-function';
 
@@ -43,13 +44,52 @@ describe('Re2jsRegExp', () => {
         expect(() => new Re2jsRegExp('(?=.*foo)bar', 'i')).toThrowError(RE2JSSyntaxException);
     });
 
-    // JavaScript-only escapes are translated to RE2 syntax rather than rejected.
+    // JavaScript-only escapes are translated to RE2 syntax rather than rejected. `\uXXXX` and `\cX`
+    // match what the built-in engine matched.
     it.each([
         ['\\u0041', 'A'],
-        ['\\u{41}', 'A'],
         ['\\cA', '\u0001'],
     ])('translates the JavaScript escape %s', (pattern, value) => {
         expect(new Re2jsRegExp(`^${pattern}$`, 'i').test(value)).toBe(true);
+        expect(new RegExp(`^${pattern}$`, 'i').test(value)).toBe(true);
+    });
+
+    // A behaviour change: without the `u` flag the built-in engine read `\u{41}` as `u` repeated
+    // 41 times. RE2 reads it as the code point, as the native `re2` package did.
+    it('gives \\u{...} its code point meaning', () => {
+        expect(new Re2jsRegExp('^\\u{41}$', 'i').test('A')).toBe(true);
+        expect(new Re2jsRegExp('^\\u{41}$', 'i').test('u'.repeat(41))).toBe(false);
+        expect(new RegExp('^\\u{41}$', 'i').test('u'.repeat(41))).toBe(true);
+    });
+
+    // Each of these is valid in both engines but matches something different in RE2.
+    it.each(['\\Afoo', 'foo\\z', '\\Q.\\E', '\\a', '[^]]', '[]a]', '[[:alpha:]]'])(
+        'rejects %s, which RE2 reads differently from JavaScript',
+        pattern => {
+            expect(() => new Re2jsRegExp(pattern, 'i')).toThrowError(RE2JSSyntaxException);
+        },
+    );
+
+    it('accepts an escaped ] and a literal [ inside a class', () => {
+        expect(new Re2jsRegExp('^[\\]a]$', 'i').test(']')).toBe(true);
+        expect(new Re2jsRegExp('^[a[]$', 'i').test('[')).toBe(true);
+    });
+
+    // Linear time is not cheap time: the cost per character grows with the compiled program, and
+    // `.{999}` fits the length cap.
+    it('rejects a pattern whose compiled program is too large', () => {
+        expect(() => new Re2jsRegExp('.{999}', 'i')).toThrowError(UserInputError);
+        expect(() => new Re2jsRegExp('.{999}.{999}.{999}.{999}', 'i')).toThrowError(UserInputError);
+    });
+
+    // Close to the worst accepted pattern found by search: a long `.` repeat at the size cap.
+    it('evaluates the largest accepted program against a 100k-character value quickly', () => {
+        const pattern = `.{${MAX_REGEX_PROGRAM_SIZE - 3}}y`;
+        const regexp = new Re2jsRegExp(pattern, 'i');
+        let result: boolean | undefined;
+        const elapsedMs = timeMs(() => (result = regexp.test('x'.repeat(100_000))));
+        expect(result).toBe(false);
+        expect(elapsedMs).toBeLessThan(2000);
     });
 
     // translateRegExp() would rewrite `\k<n>` to the literal text `k<n>`, so it is rejected first.
