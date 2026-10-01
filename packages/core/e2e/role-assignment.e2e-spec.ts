@@ -433,6 +433,40 @@ describe('RoleAssignment', () => {
                 });
             }, 'Cannot remove the SuperAdmin role from the sole SuperAdmin')();
         });
+
+        // The deprecated roleIds input replaces the Roles on the active channel only. The
+        // SuperAdmin row lives on the default channel, so a roleIds list on another channel
+        // leaves SuperAdmin in place, and one on the default channel hits the same guard as
+        // removeRolesFromUser.
+        it('the deprecated roleIds input keeps SuperAdmin when applied on a non-default channel', async () => {
+            const { activeAdministrator } = await adminClient.query(getActiveAdministratorDocument);
+            if (!activeAdministrator) {
+                throw new Error('Expected the SuperAdmin to be logged in');
+            }
+            adminClient.setChannelToken(secondChannel.token);
+            await adminClient.query(updateAdministratorDocument, {
+                input: { id: activeAdministrator.id, roleIds: [] },
+            });
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+
+            const { me } = await adminClient.query(MeDocument);
+            expect(me?.channels.map(c => c.token)).toContain(secondChannel.token);
+            for (const channel of me?.channels ?? []) {
+                expect(channel.permissions).toContain(Permission.SuperAdmin);
+            }
+        });
+
+        it('the deprecated roleIds input cannot take SuperAdmin from the sole SuperAdmin', async () => {
+            const { activeAdministrator } = await adminClient.query(getActiveAdministratorDocument);
+            if (!activeAdministrator) {
+                throw new Error('Expected the SuperAdmin to be logged in');
+            }
+            await assertThrowsWithMessage(async () => {
+                await adminClient.query(updateAdministratorDocument, {
+                    input: { id: activeAdministrator.id, roleIds: [] },
+                });
+            }, 'Cannot remove the SuperAdmin role from the sole SuperAdmin')();
+        });
     });
 
     // One rule for reads and writes: an assignment is visible to an actor iff they may grant
