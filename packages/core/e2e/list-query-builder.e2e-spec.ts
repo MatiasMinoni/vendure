@@ -425,8 +425,7 @@ describe('ListQueryBuilder', () => {
                 },
             );
 
-            // Linear in the input, but the cost per character grows with the compiled program,
-            // and `.{999}` fits the length cap.
+            // Patterns that compile to a large RE2 program are rejected.
             it.skipIf(dbType !== 'sqljs' && dbType !== 'better-sqlite3')(
                 'rejects a pattern whose compiled program is too large',
                 assertThrowsWithMessage(

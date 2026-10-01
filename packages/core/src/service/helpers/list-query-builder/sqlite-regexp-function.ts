@@ -51,11 +51,8 @@ function loadRE2JS(): typeof import('re2js') {
 }
 
 /**
- * Upper bound on the size of a compiled RE2 program, as reported by `RE2JS.programSize()`. RE2
- * matches in linear time, but the cost per input character grows with the program size, and on
- * SQLite that cost is paid for every row on the Node.js event loop. A pattern such as `.{999}`
- * stays under the length cap and compiles to over a thousand instructions, so it is rejected here.
- * The limit sits above the largest program a literal or alternation can compile to within the
+ * Upper bound on the size of a compiled RE2 program, as reported by `RE2JS.programSize()`. Patterns
+ * that compile to a larger program are rejected. The limit sits above the largest program a literal or alternation can compile to within the
  * 100-character length cap (about 102), so only repeats such as `.{200}` reach it.
  */
 export const MAX_REGEX_PROGRAM_SIZE = 128;
