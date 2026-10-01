@@ -286,10 +286,11 @@ through the query, if it uses any of the following:
 - lookaround: `(?=`, `(?!`, `(?<=`, `(?<!`
 - backreferences: `\1`, `\k<name>`
 - a repeat count above 1000, such as `a{1001}`
-- syntax that RE2 reads differently from JavaScript: `\A`, `\z`, `\Q`, `\E`, `\a`, a class that
-  opens with `[]` or `[^]` (in RE2, `[^]]` means "not `]`"), and POSIX classes such as `[[:alpha:]]`
-- a pattern that compiles to a large RE2 program, such as `.{999}`. RE2 runs in linear time, but
-  the cost per character grows with the program, and SQLite pays it for every row.
+- syntax that RE2 reads differently from JavaScript: `\A`, `\z`, `\Q`, `\E`, `\a`, `\x{...}`, a
+  class that opens with `[]` or `[^]` (in RE2, `[^]]` means "not `]`"), and POSIX classes such as
+  `[[:alpha:]]`
+- a pattern that compiles to a large RE2 program, such as `.{200}`. Literals and alternations up
+  to the 100-character length limit are not affected.
 
 Vendure translates the JavaScript escapes `\uXXXX` and `\cX` to RE2 syntax, so they match as
 before. Some other patterns match differently under RE2 than under the JavaScript `RegExp` engine:
@@ -297,9 +298,10 @@ before. Some other patterns match differently under RE2 than under the JavaScrip
 - `\u{41}` matches the code point `A`. Without the `u` flag, JavaScript read it as `u` repeated 41
   times.
 - `.` also matches `\r`, `\u2028` and `\u2029`.
-- `\s` matches ASCII whitespace only, so it no longer matches characters such as a non-breaking space.
-- `\p{L}` and other `\p{...}` classes match Unicode properties. Without the `u` flag, JavaScript
-  read them as the literal text `p{L}`.
+- `\s` matches only `[\t\n\f\r ]`. It no longer matches `\v` or non-ASCII whitespace such as a
+  non-breaking space.
+- `\p{L}`, `\pL`, `\P{L}` and `\PL` match Unicode properties. Without the `u` flag, JavaScript read
+  them as literal text such as `p{L}` or `pL`.
 - A `NULL` column never matches. The `RegExp` engine tested it as the string `"null"`.
 
 ## Filtering by custom properties
