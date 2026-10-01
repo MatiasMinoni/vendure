@@ -55,8 +55,8 @@ describe('buildRegexpTester()', () => {
         ['the built-in engine', RegExp as unknown as typeof Re2jsRegExp],
     ])('treats a null value as no match under %s', (_name, Engine) => {
         const test = buildRegexpTester(Engine);
-        expect(test('a', null as unknown as string)).toBe(0);
-        expect(test('a', undefined as unknown as string)).toBe(0);
+        expect(test('a', null)).toBe(0);
+        expect(test('a', undefined)).toBe(0);
     });
 
     it.each([
@@ -64,8 +64,8 @@ describe('buildRegexpTester()', () => {
         ['the built-in engine', RegExp as unknown as typeof Re2jsRegExp],
     ])('matches a numeric value by its string form under %s', (_name, Engine) => {
         const test = buildRegexpTester(Engine);
-        expect(test('^12', 123 as unknown as string)).toBe(1);
-        expect(test('^9', 123 as unknown as string)).toBe(0);
+        expect(test('^12', 123)).toBe(1);
+        expect(test('^9', 123)).toBe(0);
     });
 
     it('reuses a compiled pattern across calls', () => {
@@ -80,7 +80,7 @@ describe('buildRegexpTester()', () => {
                 return this.re.test(value);
             }
         }
-        const test = buildRegexpTester(CountingRegExp as any);
+        const test = buildRegexpTester(CountingRegExp);
         test('foo', 'foo');
         test('foo', 'barfoo');
         test('foo', 'nope');
