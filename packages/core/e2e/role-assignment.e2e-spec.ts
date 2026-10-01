@@ -1,5 +1,9 @@
 import { CurrencyCode, DeletionResult, LanguageCode, Permission } from '@vendure/common/lib/generated-types';
-import { ROLE_EDITOR_ROLE_CODE, SUPER_ADMIN_ROLE_CODE } from '@vendure/common/lib/shared-constants';
+import {
+    DEFAULT_APIKEY_HEADER_KEY,
+    ROLE_EDITOR_ROLE_CODE,
+    SUPER_ADMIN_ROLE_CODE,
+} from '@vendure/common/lib/shared-constants';
 import { ID } from '@vendure/common/lib/shared-types';
 import { AdministratorEvent, EventBus, RoleAssignmentEvent, VendureEvent } from '@vendure/core';
 import {
@@ -7,6 +11,7 @@ import {
     createTestEnvironment,
     E2E_DEFAULT_CHANNEL_TOKEN,
     ErrorResultGuard,
+    SimpleGraphQLClient,
 } from '@vendure/testing';
 import path from 'path';
 import { Subscription } from 'rxjs';
@@ -38,7 +43,10 @@ import { assertThrowsWithMessage } from './utils/assert-throws-with-message';
  * the filtered assignment reads, the SuperAdmin anchor row, and the event contract.
  */
 describe('RoleAssignment', () => {
-    const { server, adminClient } = createTestEnvironment(testConfig());
+    const config = testConfig();
+    config.authOptions.tokenMethod = ['bearer', 'api-key'];
+    const { server, adminClient } = createTestEnvironment(config);
+    const adminApiUrl = `http://localhost:${config.apiOptions.port}/${String(config.apiOptions.adminApiPath)}`;
 
     const DEFAULT_CHANNEL_ID = 'T_1';
     type ChannelFragment = FragmentOf<typeof channelFragment>;
@@ -381,6 +389,38 @@ describe('RoleAssignment', () => {
             expect(secondChannelPermissions).toContain(Permission.DeleteChannel);
         });
 
+        // The anchor row stands for Channels created after the grant too: no row is added, and
+        // a session opened before the Channel existed can act on it.
+        it('a channel created after the grant is administrable with no new row', async () => {
+            // Switching adminClient back logs secondSuperAdmin out, which ends all their
+            // sessions, so the live session is opened afterwards.
+            await asSuperAdminOnDefaultChannel();
+            const liveClient = new SimpleGraphQLClient(config as any, adminApiUrl);
+            await liveClient.asUserWithCredentials(secondSuperAdmin.emailAddress, 'test');
+
+            const { createChannel } = await adminClient.query(createChannelDocument, {
+                input: {
+                    code: 'post-grant-channel',
+                    token: 'post-grant-channel-token',
+                    defaultLanguageCode: LanguageCode.en,
+                    currencyCode: CurrencyCode.GBP,
+                    pricesIncludeTax: true,
+                    defaultShippingZoneId: 'T_1',
+                    defaultTaxZoneId: 'T_1',
+                },
+            });
+            channelGuard.assertSuccess(createChannel);
+
+            const assignments = await getUserRoleAssignments(secondSuperAdmin.id);
+            expect(assignments).toEqual([{ roleCode: SUPER_ADMIN_ROLE_CODE, channelId: DEFAULT_CHANNEL_ID }]);
+
+            liveClient.setChannelToken(createChannel.token);
+            const { createRole } = await liveClient.query(createRoleDocument, {
+                input: { code: 'created-on-post-grant-channel', description: '', permissions: [] },
+            });
+            expect(createRole.code).toBe('created-on-post-grant-channel');
+        });
+
         it('granting SuperAdmin again on another channel changes nothing', async () => {
             await asSuperAdminOnDefaultChannel();
             const { assignRolesToUser } = await adminClient.query(assignRolesToUserDocument, {
@@ -417,6 +457,36 @@ describe('RoleAssignment', () => {
             });
 
             expect(removeRolesFromUser.roleAssignments).toEqual([]);
+        });
+
+        // Pins current behaviour. Removing one's own SuperAdmin passes while another SuperAdmin
+        // exists; whether self may be the target of a removal is still open (Questions d7).
+        it('a SuperAdmin can revoke their own SuperAdmin while another SuperAdmin exists', async () => {
+            await adminClient.query(assignRolesToUserDocument, {
+                input: {
+                    userId: secondSuperAdmin.user.id,
+                    assignments: [{ roleId: superAdminRoleId, channelId: DEFAULT_CHANNEL_ID }],
+                },
+            });
+
+            await adminClient.asUserWithCredentials(secondSuperAdmin.emailAddress, 'test');
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            const { removeRolesFromUser } = await adminClient.query(removeRolesFromUserDocument, {
+                input: {
+                    userId: secondSuperAdmin.user.id,
+                    assignments: [{ roleId: superAdminRoleId, channelId: secondChannel.id }],
+                },
+            });
+            expect(removeRolesFromUser.roleAssignments).toEqual([]);
+
+            // The revocation is effective on the next request of the same session
+            await assertThrowsWithMessage(async () => {
+                await adminClient.query(createRoleDocument, {
+                    input: { code: 'self-revoked-superadmin', description: '', permissions: [] },
+                });
+            }, 'You are not currently authorized to perform this action')();
+
+            await asSuperAdminOnDefaultChannel();
         });
 
         it('the sole SuperAdmin cannot lose the SuperAdmin role', async () => {
@@ -466,6 +536,50 @@ describe('RoleAssignment', () => {
                     input: { id: activeAdministrator.id, roleIds: [] },
                 });
             }, 'Cannot remove the SuperAdmin role from the sole SuperAdmin')();
+        });
+
+        // Pins current behaviour; whether an API key may hold SuperAdmin at all is still open
+        // (Questions d10). The key's User gets the anchor row and acts as SuperAdmin on every
+        // Channel, but the sole-SuperAdmin guard counts Administrators only, so the key does
+        // not stand in for the last SuperAdmin Administrator.
+        it('an API key can hold SuperAdmin but does not count as a SuperAdmin holder', async () => {
+            // An ApiKey is only found on the Channels it belongs to, so it is created on
+            // second-channel (which also attaches it to the default channel).
+            adminClient.setChannelToken(secondChannel.token);
+            const { createApiKey } = await adminClient.query(createApiKeyDocument, {
+                input: {
+                    roleAssignments: [{ roleId: superAdminRoleId, channelId: secondChannel.id }],
+                    translations: [{ languageCode: LanguageCode.en, name: 'SuperAdmin key' }],
+                },
+            });
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            const { apiKey } = await adminClient.query(apiKeyUserDocument, { id: createApiKey.entityId });
+            if (!apiKey) throw new Error('Expected the SuperAdmin API key to exist');
+
+            const { roleAssignments } = await adminClient.query(roleAssignmentsOfUserDocument, {
+                userId: apiKey.user.id,
+            });
+            expect(roleAssignments.items.map(item => `${item.role.code}@${item.channelId}`)).toEqual([
+                `${SUPER_ADMIN_ROLE_CODE}@${DEFAULT_CHANNEL_ID}`,
+            ]);
+
+            const keyClient = new SimpleGraphQLClient(config as any, adminApiUrl);
+            (keyClient as any).headers[DEFAULT_APIKEY_HEADER_KEY] = createApiKey.apiKey;
+            keyClient.setChannelToken(secondChannel.token);
+            const { createRole } = await keyClient.query(createRoleDocument, {
+                input: { code: 'created-by-superadmin-key', description: '', permissions: [] },
+            });
+            expect(createRole.code).toBe('created-by-superadmin-key');
+
+            const { activeAdministrator } = await adminClient.query(getActiveAdministratorDocument);
+            if (!activeAdministrator) {
+                throw new Error('Expected the SuperAdmin to be logged in');
+            }
+            await assertThrowsWithMessage(async () => {
+                await adminClient.query(deleteAdministratorDocument, { id: activeAdministrator.id });
+            }, 'The sole SuperAdmin cannot be deleted')();
+
+            await adminClient.query(deleteApiKeysDocument, { ids: [createApiKey.entityId] });
         });
     });
 
