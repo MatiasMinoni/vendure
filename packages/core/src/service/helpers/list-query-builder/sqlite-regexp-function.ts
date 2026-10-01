@@ -51,21 +51,62 @@ function loadRE2JS(): typeof import('re2js') {
 }
 
 /**
- * Whether the pattern contains a JavaScript named backreference such as `\k<name>`. Such a pattern
- * must be rejected before translation: `RE2JS.translateRegExp()` rewrites `\k` to a literal `k`,
- * which would silently change what the pattern matches rather than rejecting it.
+ * Upper bound on the size of a compiled RE2 program, as reported by `RE2JS.programSize()`. RE2
+ * matches in linear time, but the cost per input character grows with the program size, and on
+ * SQLite that cost is paid for every row on the Node.js event loop. A pattern such as `.{999}`
+ * stays under the length cap and compiles to over a thousand instructions, so it is rejected here.
+ * Typical filter patterns compile to well under 100.
  */
-function hasNamedBackreference(pattern: string): boolean {
-    for (let i = 0; i < pattern.length - 2; i++) {
-        if (pattern[i] === '\\') {
-            if (pattern[i + 1] === 'k' && pattern[i + 2] === '<') {
-                return true;
+export const MAX_REGEX_PROGRAM_SIZE = 100;
+
+/**
+ * Escapes which `RE2JS.translateRegExp()` passes through to RE2, where they mean something other
+ * than in a JavaScript `RegExp` without the `u` flag. JavaScript reads each as the literal letter.
+ */
+const ESCAPES_WITH_RE2_MEANING = new Set(['A', 'z', 'Q', 'E', 'a']);
+
+/**
+ * Returns a description of the first construct in the pattern that RE2 would read differently
+ * from JavaScript, or `undefined` if there is none. Such a pattern must be rejected rather than
+ * compiled, since it would silently match different values:
+ *
+ * - `\k<name>` is a named backreference in JavaScript. `RE2JS.translateRegExp()` rewrites it to the
+ *   literal text `k<name>`.
+ * - `\A`, `\z`, `\Q`, `\E` and `\a` are literal letters in JavaScript but anchors, quoting or the
+ *   bell character in RE2.
+ * - `[]` and `[^]` are complete classes in JavaScript (match nothing, match anything). In RE2 a `]`
+ *   straight after `[` or `[^` is a literal, so `[^]]` means "not `]`".
+ * - `[:` inside a class is literal in JavaScript but starts a POSIX class such as `[:alpha:]` in RE2.
+ */
+function findChangedMeaning(pattern: string): string | undefined {
+    let inClass = false;
+    for (let i = 0; i < pattern.length; i++) {
+        const char = pattern[i];
+        if (char === '\\') {
+            const next = pattern[i + 1];
+            if (next === 'k' && pattern[i + 2] === '<') {
+                return 'named backreferences are not supported';
+            }
+            if (next !== undefined && ESCAPES_WITH_RE2_MEANING.has(next)) {
+                return `\\${next} has a different meaning in RE2`;
             }
             // Skip the escaped character, so that `\\k<` (an escaped backslash) is not matched.
             i++;
+        } else if (inClass) {
+            if (char === ']') {
+                inClass = false;
+            } else if (char === '[' && pattern[i + 1] === ':') {
+                return 'POSIX character classes have a different meaning in RE2';
+            }
+        } else if (char === '[') {
+            inClass = true;
+            const afterNegation = pattern[i + 1] === '^' ? i + 2 : i + 1;
+            if (pattern[afterNegation] === ']') {
+                return '[] and [^] have a different meaning in RE2';
+            }
         }
     }
-    return false;
+    return undefined;
 }
 
 /**
@@ -75,7 +116,9 @@ function hasNamedBackreference(pattern: string): boolean {
  *
  * The pattern is first passed through `RE2JS.translateRegExp()`, which rewrites JavaScript-only
  * escapes such as `\uXXXX`, `\u{...}` and `\cX` into their RE2 equivalents. This is a string
- * rewrite only, so matching stays linear-time.
+ * rewrite only, so matching stays linear-time. Constructs RE2 would read differently from
+ * JavaScript are rejected first (see {@link findChangedMeaning}), and so is a pattern whose
+ * compiled program exceeds {@link MAX_REGEX_PROGRAM_SIZE}.
  *
  * RE2 matches in guaranteed linear time, so no pattern can be driven into the catastrophic
  * backtracking the built-in engine allows. It pays for that by supporting neither lookaround nor
@@ -92,10 +135,14 @@ export class Re2jsRegExp implements CompiledRegExp {
      */
     constructor(pattern: string, _flags: SupportedFlags) {
         const { RE2JS: RE2, RE2JSSyntaxException } = loadRE2JS();
-        if (hasNamedBackreference(pattern)) {
-            throw new RE2JSSyntaxException('named backreferences are not supported', pattern);
+        const changedMeaning = findChangedMeaning(pattern);
+        if (changedMeaning) {
+            throw new RE2JSSyntaxException(changedMeaning, pattern);
         }
         this.compiled = RE2.compile(RE2.translateRegExp(pattern), RE2.CASE_INSENSITIVE);
+        if (this.compiled.programSize() > MAX_REGEX_PROGRAM_SIZE) {
+            throw new UserInputError('error.regex-filter-pattern-unsafe');
+        }
     }
 
     /** `find()` searches anywhere in the value, which is what `RegExp.test()` does. */
