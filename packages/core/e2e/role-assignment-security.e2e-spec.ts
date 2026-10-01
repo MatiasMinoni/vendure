@@ -4,6 +4,7 @@ import {
     ROLE_EDITOR_ROLE_CODE,
     SUPER_ADMIN_ROLE_CODE,
 } from '@vendure/common/lib/shared-constants';
+import { Administrator, RoleAssignment, TransactionalConnection } from '@vendure/core';
 import {
     createErrorResultGuard,
     createTestEnvironment,
@@ -13,6 +14,7 @@ import {
 } from '@vendure/testing';
 import fs from 'fs';
 import path from 'path';
+import { In, IsNull } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
@@ -907,6 +909,147 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
             );
             const after = await attempt(() => adminClient.query(getAdministratorsDocument, {}));
             record(S, 'self lockout', 'observe', r, `subsequent admin query ok=${String(after.ok)}`);
+        });
+    });
+
+    // ------------------------------------------------------------------------------------
+    // Runs after 2c, when the superadmin is the sole SuperAdmin. Each round adds one more
+    // SuperAdmin, then the two holders take SuperAdmin from each other in parallel. The
+    // sole-SuperAdmin guard reads the holder count before it writes, so without a lock both
+    // requests can see two holders and leave none. Counted from the database, since a client
+    // of either holder may have lost access.
+    describe('10. concurrent SuperAdmins (last)', () => {
+        const S = '10-concurrent';
+        const ROUNDS = 5;
+        type Holder = { client: SimpleGraphQLClient; userId: string; adminId: string };
+        let survivor: Holder;
+        let created = 0;
+
+        async function superAdminHolderIds(): Promise<string[]> {
+            const connection = server.app.get(TransactionalConnection).rawConnection;
+            const rows = await connection.getRepository(RoleAssignment).find({
+                where: { roleId: superAdminRoleId.replace(/^T_/, '') },
+            });
+            const userIds = rows.map(row => String(row.userId));
+            const live = await connection.getRepository(Administrator).find({
+                relations: ['user'],
+                where: { deletedAt: IsNull(), user: { id: In(userIds) } },
+            });
+            return live.map(a => `T_${String(a.user.id)}`);
+        }
+
+        async function addSuperAdmin(): Promise<Holder> {
+            const name = `sa${++created}`;
+            const email = `${name}@sec.test`;
+            const { createAdministrator } = await survivor.client.query(createAdministratorDocument, {
+                input: {
+                    firstName: name,
+                    lastName: 'Sec',
+                    emailAddress: email,
+                    password: PASSWORD,
+                    roleAssignments: [{ roleId: superAdminRoleId, channelId: A }],
+                },
+            });
+            const client = new SimpleGraphQLClient(config as any, adminApiUrl);
+            await client.asUserWithCredentials(email, PASSWORD);
+            client.setChannelToken(A_TOKEN);
+            return { client, userId: createAdministrator.user.id, adminId: createAdministrator.id };
+        }
+
+        function survivorOf(pair: Holder[], holderIds: string[]): Holder {
+            return mustFind(pair, h => holderIds.includes(h.userId), 'a surviving SuperAdmin');
+        }
+
+        beforeAll(async () => {
+            await asSuper();
+            const { administrators } = await adminClient.query(getAdministratorsDocument, {
+                options: { filter: { emailAddress: { eq: 'superadmin' } } },
+            });
+            survivor = {
+                client: adminClient,
+                userId: administrators.items[0].user.id,
+                adminId: administrators.items[0].id,
+            };
+            expect(await superAdminHolderIds()).toEqual([survivor.userId]);
+        });
+
+        it('two SuperAdmins removing each other in parallel leave one', async () => {
+            const outcomes: string[] = [];
+            for (let round = 0; round < ROUNDS; round++) {
+                const other = await addSuperAdmin();
+                const pair = [survivor, other];
+                const results = await Promise.all(
+                    pair.map((actor, i) =>
+                        attempt(() =>
+                            actor.client.query(removeRolesFromUserDocument, {
+                                input: {
+                                    userId: pair[1 - i].userId,
+                                    assignments: [{ roleId: superAdminRoleId, channelId: A }],
+                                },
+                            }),
+                        ),
+                    ),
+                );
+                const holders = await superAdminHolderIds();
+                outcomes.push(
+                    `${results.filter(r => r.ok).length} ok -> ${holders.length} left` +
+                        results.map(r => (r.ok ? '' : ` [${r.message}]`)).join(''),
+                );
+                if (holders.length === 0) {
+                    record(
+                        S,
+                        'parallel removeRolesFromUser',
+                        'deny',
+                        { ok: true, value: null },
+                        outcomes.join('; '),
+                    );
+                }
+                survivor = survivorOf(pair, holders);
+            }
+            record(
+                S,
+                'parallel removeRolesFromUser',
+                'observe',
+                { ok: true, value: null },
+                outcomes.join('; '),
+            );
+        });
+
+        it('two SuperAdmins deleting each other in parallel leave one', async () => {
+            const outcomes: string[] = [];
+            for (let round = 0; round < ROUNDS; round++) {
+                const other = await addSuperAdmin();
+                const pair = [survivor, other];
+                const results = await Promise.all(
+                    pair.map((actor, i) =>
+                        attempt(() =>
+                            actor.client.query(deleteAdministratorDocument, { id: pair[1 - i].adminId }),
+                        ),
+                    ),
+                );
+                const holders = await superAdminHolderIds();
+                outcomes.push(
+                    `${results.filter(r => r.ok).length} ok -> ${holders.length} left` +
+                        results.map(r => (r.ok ? '' : ` [${r.message}]`)).join(''),
+                );
+                if (holders.length === 0) {
+                    record(
+                        S,
+                        'parallel deleteAdministrator',
+                        'deny',
+                        { ok: true, value: null },
+                        outcomes.join('; '),
+                    );
+                }
+                survivor = survivorOf(pair, holders);
+            }
+            record(
+                S,
+                'parallel deleteAdministrator',
+                'observe',
+                { ok: true, value: null },
+                outcomes.join('; '),
+            );
         });
     });
 });
