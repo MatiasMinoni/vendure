@@ -1,5 +1,5 @@
-import { RE2JSSyntaxException } from 're2js';
-import { describe, expect, it } from 'vitest';
+import Module from 'module';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { UserInputError } from '../../../common/error/errors';
 
@@ -9,6 +9,10 @@ import {
     createSqliteRegexpFunction,
     Re2jsRegExp,
 } from './sqlite-regexp-function';
+
+// The source loads re2js with `require()`, which resolves its CommonJS build. A static `import`
+// here would resolve the ESM build, whose exception classes are different objects.
+const { RE2JSSyntaxException } = Module.createRequire(__filename)('re2js') as typeof import('re2js');
 
 // A pattern that is catastrophically slow under the backtracking RegExp engine but harmless
 // under RE2. See GHSA-jgm3-qmp2-c4p7. The trailing `Z` after `$` makes every match attempt
@@ -159,5 +163,47 @@ describe('assertRegexFilterEngineCompatible()', () => {
 
     it.each(['\\u0041', '\\u{1F600}', '\\cA'])('accepts the translated JavaScript escape %s', pattern => {
         expect(() => assertRegexFilterEngineCompatible(pattern, 'sqljs')).not.toThrow();
+    });
+});
+
+// A missing or broken engine must surface as its own error. Reporting it as unsupported syntax
+// would hide the fault, and falling back to the built-in RegExp would reopen the ReDoS.
+describe('when re2js cannot be loaded', () => {
+    const moduleWithLoad = Module as unknown as { _load: (request: string, ...rest: unknown[]) => unknown };
+    const originalLoad = moduleWithLoad._load;
+
+    afterEach(() => {
+        moduleWithLoad._load = originalLoad;
+        vi.resetModules();
+    });
+
+    async function importWithFailingRe2js() {
+        moduleWithLoad._load = function (request: string, ...rest: unknown[]) {
+            if (request === 're2js') {
+                throw new Error("Cannot find module 're2js'");
+            }
+            return originalLoad.call(this, request, ...rest);
+        };
+        // A fresh module instance, so the engine cached by earlier tests is not reused.
+        vi.resetModules();
+        return import('./sqlite-regexp-function');
+    }
+
+    it('rethrows the load error from the filter pre-check', async () => {
+        const fresh = await importWithFailingRe2js();
+        let thrown: unknown;
+        try {
+            fresh.assertRegexFilterEngineCompatible('foo', 'sqljs');
+        } catch (e) {
+            thrown = e;
+        }
+        expect(thrown).toBeInstanceOf(Error);
+        expect(thrown).not.toBeInstanceOf(UserInputError);
+        expect((thrown as Error).message).toContain("Cannot find module 're2js'");
+    });
+
+    it('fails when the SQLite regexp function is created', async () => {
+        const fresh = await importWithFailingRe2js();
+        expect(() => fresh.createSqliteRegexpFunction()).toThrowError("Cannot find module 're2js'");
     });
 });
