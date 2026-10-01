@@ -2949,6 +2949,8 @@ export type Mutation = {
    * every permission of each Role on its Channel. Pairs the User already holds are left as-is.
    * The SuperAdmin Role is held on every Channel or not at all, so a SuperAdmin pair on any
    * Channel is stored as a single assignment on the default Channel.
+   * The User must be an Administrator, or the User of an ApiKey on the active Channel, in which
+   * case the active user also needs `UpdateApiKey`. Any other User is reported as not found.
    */
   assignRolesToUser: User;
   /** Assigns ShippingMethods to the specified Channel */
@@ -3168,7 +3170,8 @@ export type Mutation = {
    * as `assignRolesToUser`: the active user must hold every permission of each Role on its
    * Channel. Pairs the User does not hold are left as-is. A SuperAdmin pair on any Channel
    * removes the single default-channel SuperAdmin assignment, and with it SuperAdmin access on
-   * every Channel; the sole SuperAdmin cannot lose it.
+   * every Channel; the sole SuperAdmin cannot lose it. The same Users may be targeted as for
+   * `assignRolesToUser`.
    */
   removeRolesFromUser: User;
   /** Remove all settled jobs in the given queues older than the given date. Returns the number of jobs deleted. */

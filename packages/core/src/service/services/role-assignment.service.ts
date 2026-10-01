@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Permission } from '@vendure/common/lib/generated-types';
 import { DEFAULT_CHANNEL_CODE } from '@vendure/common/lib/shared-constants';
 import { ID, PaginatedList } from '@vendure/common/lib/shared-types';
 import { unique } from '@vendure/common/lib/unique';
@@ -6,12 +7,13 @@ import { In, IsNull } from 'typeorm';
 
 import { RequestContext } from '../../api/common/request-context';
 import { RelationPaths } from '../../api/decorators/relations.decorator';
-import { EntityNotFoundError, InternalServerError } from '../../common/error/errors';
+import { EntityNotFoundError, ForbiddenError, InternalServerError } from '../../common/error/errors';
 import { Instrument } from '../../common/instrument-decorator';
 import { ListQueryOptions } from '../../common/types/common-types';
 import { idsAreEqual } from '../../common/utils';
 import { TransactionalConnection } from '../../connection/transactional-connection';
 import { Administrator } from '../../entity/administrator/administrator.entity';
+import { ApiKey } from '../../entity/api-key/api-key.entity';
 import { Channel } from '../../entity/channel/channel.entity';
 import { RoleAssignment } from '../../entity/role-assignment/role-assignment.entity';
 import { Role } from '../../entity/role/role.entity';
@@ -265,6 +267,43 @@ export class RoleAssignmentService {
         }
         await this.deleteAssignments(ctx, userId, target);
         return this.getAssignmentsForUser(ctx, userId);
+    }
+
+    /**
+     * @description
+     * Asserts that the User may be the target of an actor-made {@link assign} or {@link remove}.
+     * The target must be a non-deleted Administrator, or the User of a non-deleted ApiKey which
+     * belongs to the active Channel, in which case the active user must also hold
+     * `UpdateApiKey` there. Any other User, a Customer's User included, is reported as not
+     * found, so that admin Roles cannot be granted to it and its existence is not disclosed.
+     *
+     * {@link assign} and {@link remove} do not call this themselves: the services which create
+     * Administrators and ApiKeys assign Roles to a User whose entity they are still writing.
+     *
+     * @throws {EntityNotFoundError} if the User is neither a non-deleted Administrator nor the
+     * User of a non-deleted ApiKey on the active Channel
+     * @throws {ForbiddenError} if the User belongs to an ApiKey and the active user does not
+     * hold `UpdateApiKey` on the active Channel
+     * @since 4.0.0
+     */
+    async assertManageableSubject(ctx: RequestContext, userId: ID): Promise<void> {
+        const administrator = await this.connection.getRepository(ctx, Administrator).findOne({
+            where: { user: { id: userId }, deletedAt: IsNull() },
+        });
+        if (administrator) {
+            return;
+        }
+        const apiKey = await this.connection.getRepository(ctx, ApiKey).findOne({
+            where: { userId, deletedAt: IsNull() },
+        });
+        const apiKeyOnChannel =
+            apiKey && (await this.connection.findOneInChannel(ctx, ApiKey, apiKey.id, ctx.channelId));
+        if (!apiKeyOnChannel) {
+            throw new EntityNotFoundError('User', userId);
+        }
+        if (!ctx.userHasPermissions([Permission.UpdateApiKey])) {
+            throw new ForbiddenError();
+        }
     }
 
     /**
