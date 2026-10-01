@@ -61,14 +61,7 @@ export class StockLevelService {
     }
 
     async getStockLevelsForVariant(ctx: RequestContext, productVariantId: ID): Promise<StockLevel[]> {
-        return this.connection
-            .getRepository(ctx, StockLevel)
-            .createQueryBuilder('stockLevel')
-            .leftJoinAndSelect('stockLevel.stockLocation', 'stockLocation')
-            .leftJoin('stockLocation.channels', 'channel')
-            .where('stockLevel.productVariantId = :productVariantId', { productVariantId })
-            .andWhere('channel.id = :channelId', { channelId: ctx.channelId })
-            .getMany();
+        return this.getChannelStockLevelsLoader(ctx).load(productVariantId);
     }
 
     /**
@@ -99,12 +92,56 @@ export class StockLevelService {
     }
 
     private async batchLoadStockLevels(ctx: RequestContext, ids: ID[]): Promise<StockLevel[][]> {
-        const uniqueIds = [...new Map(ids.map(id => [String(id), id])).values()];
         const stockLevels = await this.connection.getRepository(ctx, StockLevel).find({
             where: {
-                productVariantId: In(uniqueIds),
+                productVariantId: In(this.uniqueIds(ids)),
             },
         });
+        return this.groupByVariantId(ids, stockLevels);
+    }
+
+    /**
+     * Held against the RequestContext which also supplies the channel filter below, so a single
+     * loader per ctx cannot mix channels. `cache: false` batches without memoizing, so a write
+     * earlier in the request is not masked, for the same reason as `getStockLevelLoader`.
+     */
+    private getChannelStockLevelsLoader(ctx: RequestContext): DataLoader<ID, StockLevel[]> {
+        return this.requestCache.get(
+            ctx,
+            'StockLevelService.channelStockLevelsByVariantId',
+            () =>
+                new DataLoader<ID, StockLevel[]>(ids => this.batchLoadChannelStockLevels(ctx, ids as ID[]), {
+                    cache: false,
+                }),
+        );
+    }
+
+    private async batchLoadChannelStockLevels(ctx: RequestContext, ids: ID[]): Promise<StockLevel[][]> {
+        const stockLevels = await this.connection
+            .getRepository(ctx, StockLevel)
+            .createQueryBuilder('stockLevel')
+            .leftJoinAndSelect('stockLevel.stockLocation', 'stockLocation')
+            .leftJoin('stockLocation.channels', 'channel')
+            .where('stockLevel.productVariantId IN (:...productVariantIds)', {
+                productVariantIds: this.uniqueIds(ids),
+            })
+            .andWhere('channel.id = :channelId', { channelId: ctx.channelId })
+            // An IN (...) query gives no row order guarantee, so sort to keep the order of
+            // `stockLevels` stable for API clients.
+            .orderBy('stockLevel.stockLocationId', 'ASC')
+            .getMany();
+        return this.groupByVariantId(ids, stockLevels);
+    }
+
+    private uniqueIds(ids: ID[]): ID[] {
+        return [...new Map(ids.map(id => [String(id), id])).values()];
+    }
+
+    /**
+     * Returns one entry per requested id, in the order requested, as a DataLoader batch function
+     * must. A variant with no rows gets an empty array.
+     */
+    private groupByVariantId(ids: ID[], stockLevels: StockLevel[]): StockLevel[][] {
         const byVariantId = new Map<string, StockLevel[]>();
         for (const stockLevel of stockLevels) {
             const key = String(stockLevel.productVariantId);

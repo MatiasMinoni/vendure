@@ -4,13 +4,14 @@ import { RequestContext } from '../../api/common/request-context';
 import { RequestContextCacheService } from '../../cache/request-context-cache.service';
 import { Channel } from '../../entity/channel/channel.entity';
 import { StockLevel } from '../../entity/stock-level/stock-level.entity';
+import { StockLocation } from '../../entity/stock-location/stock-location.entity';
 
 import { StockLevelService } from './stock-level.service';
 
 /**
- * Unit tests for the request-scoped batching of StockLevel lookups. Resolving the stock of a
- * list of ProductVariants used to issue one query per variant, and two per variant on the
- * Admin API, where `stockOnHand` and `stockAllocated` are separate field resolvers.
+ * Unit tests for the request-scoped batching of StockLevel lookups. Concurrent lookups within
+ * one RequestContext share a single query, including the separate `stockOnHand` and
+ * `stockAllocated` field resolvers of the Admin API.
  */
 
 /** One row per variant 1-5, all at stock location 1. */
@@ -31,8 +32,88 @@ const find = vi.fn(({ where }: any) => {
     return Promise.resolve(allStockLevels.filter(sl => ids.includes(String(sl.productVariantId))));
 });
 
+/**
+ * The rows behind `getStockLevelsForVariant`, which selects the StockLocation relation and
+ * filters on the Channel. Location 1 is in channel 1 only, location 2 is in both channels, and
+ * variant 1 holds stock in both, so a variant can be seen through either channel with a
+ * different set of rows.
+ */
+const location1 = new StockLocation({ id: 1, channels: [new Channel({ id: 1 })] });
+const location2 = new StockLocation({
+    id: 2,
+    channels: [new Channel({ id: 1 }), new Channel({ id: 42 })],
+});
+const allStockLevelsWithLocation = [
+    // Ahead of variant 1's location-1 row on purpose: the rows are not in stockLocationId order,
+    // so a test asserting that order is asserting that the query asked for it.
+    new StockLevel({
+        id: 6,
+        stockLocationId: 2,
+        stockLocation: location2,
+        stockOnHand: 7,
+        stockAllocated: 0,
+        productVariantId: 1,
+    }),
+    ...allStockLevels.map(sl => new StockLevel({ ...sl, stockLocation: location1 })),
+];
+
+type QueryBuilderRead = {
+    selectedRelations: string[];
+    clauses: string[];
+    params: Record<string, any>;
+    orderBy?: string;
+};
+
+/**
+ * The selected relations, where clauses, bound parameters and ordering of each query-builder
+ * read, newest last.
+ */
+const queryBuilderReads: QueryBuilderRead[] = [];
+
+function createQueryBuilder() {
+    const read: QueryBuilderRead = { selectedRelations: [], clauses: [], params: {} };
+    const record = (clause: string, params: Record<string, any>) => {
+        read.clauses.push(clause);
+        Object.assign(read.params, params);
+        return queryBuilder;
+    };
+    const queryBuilder: any = {
+        leftJoinAndSelect: (relation: string) => {
+            read.selectedRelations.push(relation);
+            return queryBuilder;
+        },
+        leftJoin: () => queryBuilder,
+        where: record,
+        andWhere: record,
+        orderBy: (field: string) => {
+            read.orderBy = field;
+            return queryBuilder;
+        },
+        getMany: () => {
+            queryBuilderReads.push(read);
+            const ids: Array<string | number> = read.params.productVariantIds;
+            const selectsStockLocation = read.selectedRelations.includes('stockLevel.stockLocation');
+            const rows = allStockLevelsWithLocation
+                .filter(
+                    sl =>
+                        ids.map(id => String(id)).includes(String(sl.productVariantId)) &&
+                        sl.stockLocation.channels.some(c => String(c.id) === String(read.params.channelId)),
+                )
+                .map(sl => (selectsStockLocation ? sl : new StockLevel({ ...sl, stockLocation: undefined })));
+            if (!read.orderBy) {
+                return Promise.resolve(rows);
+            }
+            const field = read.orderBy.replace('stockLevel.', '');
+            return Promise.resolve(
+                [...rows].sort((a, b) => Number((a as any)[field]) - Number((b as any)[field])),
+            );
+        },
+    };
+    return queryBuilder;
+}
+
 const mockConnection = {
-    getRepository: () => ({ find }),
+    getRepository: () => ({ find, createQueryBuilder }),
 } as any;
 
 // Sums the levels it is given, as DefaultStockLocationStrategy does, so the assertions are
@@ -48,10 +129,10 @@ const mockConfigService = {
     },
 } as any;
 
-function newCtx(): RequestContext {
+function newCtx(channelId = 1): RequestContext {
     return new RequestContext({
         apiType: 'shop',
-        channel: new Channel({ id: 1 }),
+        channel: new Channel({ id: channelId }),
         authorizedAsOwnerOnly: false,
         isAuthorized: true,
         session: {} as any,
@@ -64,6 +145,7 @@ describe('StockLevelService', () => {
 
     beforeEach(() => {
         find.mockClear();
+        queryBuilderReads.length = 0;
         ctx = newCtx();
         service = new StockLevelService(
             mockConnection,
@@ -116,6 +198,88 @@ describe('StockLevelService', () => {
             ]);
 
             expect(find).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    // The Admin API `ProductVariant.stockLevels` field, which is channel-filtered and therefore
+    // reads through its own loader rather than the one behind `getAvailableStock`.
+    describe('getStockLevelsForVariant', () => {
+        it('batches concurrent lookups into a single query', async () => {
+            const results = await Promise.all(
+                [2, 3, 4, 5].map(id => service.getStockLevelsForVariant(ctx, id)),
+            );
+
+            expect(queryBuilderReads.length).toBe(1);
+            expect(queryBuilderReads[0].params.productVariantIds).toEqual([2, 3, 4, 5]);
+            expect(results.map(levels => levels.map(sl => sl.productVariantId))).toEqual([
+                [2],
+                [3],
+                [4],
+                [5],
+            ]);
+        });
+
+        it('groups every row of a batch onto the variant it belongs to, by stock location', async () => {
+            const [variant1, variant2] = await Promise.all([
+                service.getStockLevelsForVariant(ctx, 1),
+                service.getStockLevelsForVariant(ctx, 2),
+            ]);
+
+            expect(queryBuilderReads.length).toBe(1);
+            // The fixture rows are not in this order, so the batch must ask the database for it.
+            expect(variant1.map(sl => sl.stockLocationId)).toEqual([1, 2]);
+            expect(variant2.map(sl => sl.stockLocationId)).toEqual([1]);
+        });
+
+        it('includes the StockLocation relation on each StockLevel', async () => {
+            const stockLevels = await service.getStockLevelsForVariant(ctx, 1);
+
+            expect(stockLevels.map(sl => sl.stockLocation)).toEqual([location1, location2]);
+        });
+
+        it('returns an empty array for a variant with no StockLevel rows', async () => {
+            const result = await service.getStockLevelsForVariant(ctx, 99);
+
+            expect(result).toEqual([]);
+        });
+
+        it('returns only the stock levels visible in the Channel of the RequestContext', async () => {
+            // Location 2 is in channel 42, location 1 is not.
+            const otherChannelCtx = newCtx(42);
+            const [variant1, variant2] = await Promise.all([
+                service.getStockLevelsForVariant(otherChannelCtx, 1),
+                service.getStockLevelsForVariant(otherChannelCtx, 2),
+            ]);
+
+            // The mock filters rows on the bound channelId but cannot evaluate SQL, so the clause
+            // that uses it is asserted directly.
+            expect(queryBuilderReads[0].clauses).toContain('channel.id = :channelId');
+            expect(queryBuilderReads[0].params.channelId).toBe(42);
+            expect(variant1.map(sl => sl.stockLocationId)).toEqual([2]);
+            expect(variant2).toEqual([]);
+        });
+
+        it('re-reads on a later tick, so levels changed within a request are not stale', async () => {
+            await service.getStockLevelsForVariant(ctx, 1);
+            await service.getStockLevelsForVariant(ctx, 1);
+
+            expect(queryBuilderReads.length).toBe(2);
+        });
+
+        it('does not share a batch across RequestContexts', async () => {
+            await Promise.all([
+                service.getStockLevelsForVariant(ctx, 1),
+                service.getStockLevelsForVariant(newCtx(), 2),
+            ]);
+
+            expect(queryBuilderReads.length).toBe(2);
+        });
+
+        it('does not share a batch with getAvailableStock', async () => {
+            await Promise.all([service.getStockLevelsForVariant(ctx, 1), service.getAvailableStock(ctx, 1)]);
+
+            expect(queryBuilderReads.length).toBe(1);
+            expect(find).toHaveBeenCalledTimes(1);
         });
     });
 });

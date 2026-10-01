@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/ban-types */
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
 import { CustomFieldType, Type } from '@vendure/common/lib/shared-types';
 import { assertNever } from '@vendure/common/lib/shared-utils';
 import {
@@ -210,7 +210,9 @@ export function registerCustomFieldsForEntity(
                         // to the same database column as the relation's join column.
                         EntityId({ nullable: true })(instance, `${name}Id`);
                         if (indexed) {
-                            registerIndex(instance, name);
+                            // TypeORM matches an index to a relation by its bare property name, which
+                            // never matches a relation inside the customFields embedded.
+                            registerIndex(instance, `${name}Id`);
                         }
                     }
                 } else {
