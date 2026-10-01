@@ -63,20 +63,31 @@ describe('Re2jsRegExp', () => {
     });
 
     // Each of these is valid in both engines but matches something different in RE2.
-    it.each(['\\Afoo', 'foo\\z', '\\Q.\\E', '\\a', '[^]]', '[]a]', '[[:alpha:]]'])(
+    it.each(['\\Afoo', 'foo\\z', '\\Q.\\E', '\\a', '\\x{41}', '[^]]', '[]a]', '[[:alpha:]]'])(
         'rejects %s, which RE2 reads differently from JavaScript',
         pattern => {
             expect(() => new Re2jsRegExp(pattern, 'i')).toThrowError(RE2JSSyntaxException);
         },
     );
 
+    it('accepts the two-digit \\x escape, which both engines read the same way', () => {
+        expect(new Re2jsRegExp('^\\x41$', 'i').test('A')).toBe(true);
+    });
+
     it('accepts an escaped ] and a literal [ inside a class', () => {
         expect(new Re2jsRegExp('^[\\]a]$', 'i').test(']')).toBe(true);
         expect(new Re2jsRegExp('^[a[]$', 'i').test('[')).toBe(true);
     });
 
-    // Linear time is not cheap time: the cost per character grows with the compiled program, and
-    // `.{999}` fits the length cap.
+    // A literal or alternation filling the 100-character length cap stays under the program cap.
+    it('accepts a literal and an alternation at the length cap', () => {
+        expect(() => new Re2jsRegExp('x'.repeat(100), 'i')).not.toThrow();
+        const alternation =
+            'red|green|blue|yellow|black|white|orange|purple|silver|golden|maroon|violet|indigo|crimson|teal';
+        expect(() => new Re2jsRegExp(alternation, 'i')).not.toThrow();
+    });
+
+    // Patterns that compile to a large RE2 program are rejected.
     it('rejects a pattern whose compiled program is too large', () => {
         expect(() => new Re2jsRegExp('.{999}', 'i')).toThrowError(UserInputError);
         expect(() => new Re2jsRegExp('.{999}.{999}.{999}.{999}', 'i')).toThrowError(UserInputError);
@@ -84,6 +95,7 @@ describe('Re2jsRegExp', () => {
 
     // Close to the worst accepted pattern found by search: a long `.` repeat at the size cap.
     it('evaluates the largest accepted program against a 100k-character value quickly', () => {
+        // `.{n}y` compiles to n + 3 instructions, so this is exactly at the cap.
         const pattern = `.{${MAX_REGEX_PROGRAM_SIZE - 3}}y`;
         const regexp = new Re2jsRegExp(pattern, 'i');
         let result: boolean | undefined;
