@@ -3,8 +3,12 @@
 #### Security
 
 * **core** `regex` list filters on SQLite and SQL.js are evaluated by `re2js`, a pure-JavaScript port of RE2 that matches in linear time and so cannot be exploited for ReDoS. It installs with `@vendure/core` and has no build step. It replaces the optional native `re2` dependency used by earlier 3.8.0 pre-releases. When that native build did not run (pnpm 10 and bun skip it by default), those pre-releases fell back to the built-in `RegExp` engine, which is open to ReDoS. Other databases evaluate the pattern themselves and are unaffected.
-  * Compared with the built-in `RegExp` engine (3.7.3 and earlier, and pre-releases without a native `re2` build), these are breaking changes on SQLite and SQL.js. A `regex` filter which uses lookaround, a backreference (including `\k<name>`), `[^]` or a repeat count above 1000 now returns a `UserInputError`. `.` now matches `\r`. `\p{...}` now matches a Unicode property class, where it used to match the literal text `p{...}`. A `NULL` column no longer matches; the `RegExp` engine tested it as the string `"null"`. The JavaScript escapes `\uXXXX`, `\u{...}` and `\cX` are translated to RE2 syntax and keep working.
-  * Compared with a pre-release that had native `re2` built, the change is small. Lookaround and backreferences were already rejected there, and `\uXXXX`, `\u{...}` and `\cX` are still translated.
+  * Compared with the built-in `RegExp` engine (3.7.3 and earlier, and pre-releases without a native `re2` build), these are breaking changes on SQLite and SQL.js:
+    * A `regex` filter now returns a `UserInputError` if it uses lookaround, a backreference (including `\k<name>`) or a repeat count above 1000. The same happens if it uses syntax RE2 reads differently from JavaScript: `\A`, `\z`, `\Q`, `\E`, `\a`, a class opening with `[]` or `[^]`, or a POSIX class such as `[[:alpha:]]`.
+    * A pattern that compiles to a large RE2 program, such as `.{999}`, is rejected as excessive resource consumption. Matching is linear, but the cost per character grows with the program and is paid for every row.
+    * Some patterns match differently. `\u{41}` is the code point `A`, where it was `u` repeated 41 times. `.` also matches `\r`, `\u2028` and `\u2029`. `\s` is ASCII-only. `\p{...}` is a Unicode property class, where it was the literal text `p{...}`. A `NULL` column never matches, where it was tested as the string `"null"`.
+    * `\uXXXX` and `\cX` are translated to RE2 syntax and match as before.
+  * Compared with a pre-release that had native `re2` built, lookaround and backreferences were already rejected, and `\uXXXX`, `\u{...}` and `\cX` are still translated. The new rejections above and the program size cap still apply.
 
 #### Features
 
