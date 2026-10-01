@@ -125,4 +125,16 @@ describe('assertRegexFilterEngineCompatible()', () => {
         );
         expect(() => assertRegexFilterEngineCompatible('(a)\\1', 'sqljs')).toThrowError(UserInputError);
     });
+
+    // These are valid JavaScript regex syntax but not RE2 syntax, and are listed in the docs.
+    it.each(['\\u0041', '(?<n>a)\\k<n>', '\\cA', '[^]'])(
+        'rejects the JavaScript-only syntax %s on SQLite backends',
+        pattern => {
+            expect(() => assertRegexFilterEngineCompatible(pattern, 'sqljs')).toThrowError(UserInputError);
+        },
+    );
+
+    it('accepts named groups, which RE2 supports', () => {
+        expect(() => assertRegexFilterEngineCompatible('(?<word>foo)bar', 'sqljs')).not.toThrow();
+    });
 });
