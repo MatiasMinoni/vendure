@@ -170,10 +170,14 @@ export function buildRegexpTester(
  * Creates the JS function registered as SQLite's `REGEXP` implementation. Patterns are evaluated by
  * RE2 in guaranteed linear time and so cannot be exploited for ReDoS, which matters here because
  * these drivers match on the Node.js event loop rather than inside the database.
+ *
+ * The engine is loaded here rather than on the first query, so that a missing `re2js` fails the
+ * SQLite bootstrap instead of the first `regex` filter.
  */
 export function createSqliteRegexpFunction(): (
     pattern: string,
     value: string | number | null | undefined,
 ) => number {
+    loadRE2JS();
     return buildRegexpTester(Re2jsRegExp);
 }
