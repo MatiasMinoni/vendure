@@ -947,7 +947,7 @@
           "title": "Quick Start",
           "slug": "quick-start",
           "file": "docs/guides/mcp-server/quick-start/index.mdx",
-          "lastModified": "2026-10-01T12:32:35+02:00"
+          "lastModified": "2026-10-01T19:26:07+02:00"
         },
         {
           "title": "OAuth & Consent",
@@ -971,7 +971,7 @@
           "title": "Registering Custom Tools",
           "slug": "custom-tools",
           "file": "docs/guides/mcp-server/custom-tools/index.mdx",
-          "lastModified": "2026-10-01T19:24:00+02:00"
+          "lastModified": "2026-10-01T19:26:07+02:00"
         },
         {
           "title": "Production Hardening",
@@ -995,7 +995,7 @@
           "title": "Built-in Tool Reference",
           "slug": "built-in-tools",
           "file": "docs/guides/mcp-server/built-in-tools/index.mdx",
-          "lastModified": "2026-10-01T12:32:35+02:00"
+          "lastModified": "2026-10-01T19:26:07+02:00"
         },
         {
           "title": "OAuth Protocol Reference",
@@ -3949,7 +3949,7 @@
                   "title": "McpAuthorizationRequest",
                   "slug": "mcp-authorization-request",
                   "file": "docs/reference/core-plugins/mcp-plugin/mcp-authorization-request.mdx",
-                  "lastModified": "2026-09-29T10:57:44+02:00"
+                  "lastModified": "2026-10-01T19:26:07+02:00"
                 },
                 {
                   "title": "McpDnsRebindingOptions",
@@ -4021,7 +4021,7 @@
                   "title": "McpToolExecutionService",
                   "slug": "mcp-tool-execution-service",
                   "file": "docs/reference/core-plugins/mcp-plugin/mcp-tool-execution-service.mdx",
-                  "lastModified": "2026-09-29T10:57:44+02:00"
+                  "lastModified": "2026-10-01T19:26:07+02:00"
                 },
                 {
                   "title": "McpToolExposureMode",
@@ -4033,7 +4033,7 @@
                   "title": "McpToolSummary",
                   "slug": "mcp-tool-summary",
                   "file": "docs/reference/core-plugins/mcp-plugin/mcp-tool-summary.mdx",
-                  "lastModified": "2026-09-29T10:57:44+02:00"
+                  "lastModified": "2026-10-01T19:26:07+02:00"
                 }
               ],
               "lastModified": "2026-09-29T10:57:44+02:00"
@@ -4081,164 +4081,197 @@
             {
               "title": "AssertCustomFieldsWritable",
               "slug": "assert-custom-fields-writable",
-              "file": "docs/reference/mcp-sdk/assert-custom-fields-writable.mdx"
+              "file": "docs/reference/mcp-sdk/assert-custom-fields-writable.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "BooleanFilter",
               "slug": "boolean-filter",
-              "file": "docs/reference/mcp-sdk/boolean-filter.mdx"
+              "file": "docs/reference/mcp-sdk/boolean-filter.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "DateFilter",
               "slug": "date-filter",
-              "file": "docs/reference/mcp-sdk/date-filter.mdx"
+              "file": "docs/reference/mcp-sdk/date-filter.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "EmailAddressSchema",
               "slug": "email-address-schema",
-              "file": "docs/reference/mcp-sdk/email-address-schema.mdx"
+              "file": "docs/reference/mcp-sdk/email-address-schema.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "GRAPHQL_INT_MAX",
               "slug": "graphql_int_max",
-              "file": "docs/reference/mcp-sdk/graphql_int_max.mdx"
+              "file": "docs/reference/mcp-sdk/graphql_int_max.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "GRAPHQL_INT_MIN",
               "slug": "graphql_int_min",
-              "file": "docs/reference/mcp-sdk/graphql_int_min.mdx"
+              "file": "docs/reference/mcp-sdk/graphql_int_min.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "IdSchema",
               "slug": "id-schema",
-              "file": "docs/reference/mcp-sdk/id-schema.mdx"
+              "file": "docs/reference/mcp-sdk/id-schema.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "Int32Schema",
               "slug": "int32schema",
-              "file": "docs/reference/mcp-sdk/int32schema.mdx"
+              "file": "docs/reference/mcp-sdk/int32schema.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "ListInput",
               "slug": "list-input",
-              "file": "docs/reference/mcp-sdk/list-input.mdx"
+              "file": "docs/reference/mcp-sdk/list-input.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "ListOptions",
               "slug": "list-options",
-              "file": "docs/reference/mcp-sdk/list-options.mdx"
+              "file": "docs/reference/mcp-sdk/list-options.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "LongText",
               "slug": "long-text",
-              "file": "docs/reference/mcp-sdk/long-text.mdx"
+              "file": "docs/reference/mcp-sdk/long-text.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "MAX_ID_LIST_LENGTH",
               "slug": "max_id_list_length",
-              "file": "docs/reference/mcp-sdk/max_id_list_length.mdx"
+              "file": "docs/reference/mcp-sdk/max_id_list_length.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "MAX_LIST_PAGE_SIZE",
               "slug": "max_list_page_size",
-              "file": "docs/reference/mcp-sdk/max_list_page_size.mdx"
+              "file": "docs/reference/mcp-sdk/max_list_page_size.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpCallerGrant",
               "slug": "mcp-caller-grant",
-              "file": "docs/reference/mcp-sdk/mcp-caller-grant.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-caller-grant.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpCallerInfo",
               "slug": "mcp-caller-info",
-              "file": "docs/reference/mcp-sdk/mcp-caller-info.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-caller-info.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpJsonSchema",
               "slug": "mcp-json-schema",
-              "file": "docs/reference/mcp-sdk/mcp-json-schema.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-json-schema.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpStandardSchema",
               "slug": "mcp-standard-schema",
-              "file": "docs/reference/mcp-sdk/mcp-standard-schema.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-standard-schema.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpStandardSchemaIssue",
               "slug": "mcp-standard-schema-issue",
-              "file": "docs/reference/mcp-sdk/mcp-standard-schema-issue.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-standard-schema-issue.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpStandardSchemaResult",
               "slug": "mcp-standard-schema-result",
-              "file": "docs/reference/mcp-sdk/mcp-standard-schema-result.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-standard-schema-result.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpTool",
               "slug": "mcp-tool",
-              "file": "docs/reference/mcp-sdk/mcp-tool.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-tool.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpToolBehavior",
               "slug": "mcp-tool-behavior",
-              "file": "docs/reference/mcp-sdk/mcp-tool-behavior.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-tool-behavior.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpToolHandler",
               "slug": "mcp-tool-handler",
-              "file": "docs/reference/mcp-sdk/mcp-tool-handler.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-tool-handler.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpToolMetadata",
               "slug": "mcp-tool-metadata",
-              "file": "docs/reference/mcp-sdk/mcp-tool-metadata.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-tool-metadata.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpToolSchema",
               "slug": "mcp-tool-schema",
-              "file": "docs/reference/mcp-sdk/mcp-tool-schema.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-tool-schema.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "McpToolset",
               "slug": "mcp-toolset",
-              "file": "docs/reference/mcp-sdk/mcp-toolset.mdx"
+              "file": "docs/reference/mcp-sdk/mcp-toolset.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "NumberFilter",
               "slug": "number-filter",
-              "file": "docs/reference/mcp-sdk/number-filter.mdx"
+              "file": "docs/reference/mcp-sdk/number-filter.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "Page",
               "slug": "page",
-              "file": "docs/reference/mcp-sdk/page.mdx"
+              "file": "docs/reference/mcp-sdk/page.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "PaginationFields",
               "slug": "pagination-fields",
-              "file": "docs/reference/mcp-sdk/pagination-fields.mdx"
+              "file": "docs/reference/mcp-sdk/pagination-fields.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "ShortText",
               "slug": "short-text",
-              "file": "docs/reference/mcp-sdk/short-text.mdx"
+              "file": "docs/reference/mcp-sdk/short-text.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "SlicePage",
               "slug": "slice-page",
-              "file": "docs/reference/mcp-sdk/slice-page.mdx"
+              "file": "docs/reference/mcp-sdk/slice-page.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "StringFilter",
               "slug": "string-filter",
-              "file": "docs/reference/mcp-sdk/string-filter.mdx"
+              "file": "docs/reference/mcp-sdk/string-filter.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             },
             {
               "title": "ToDecimalString",
               "slug": "to-decimal-string",
-              "file": "docs/reference/mcp-sdk/to-decimal-string.mdx"
+              "file": "docs/reference/mcp-sdk/to-decimal-string.mdx",
+              "lastModified": "2026-10-01T19:26:07+02:00"
             }
-          ]
+          ],
+          "lastModified": "2026-10-01T19:26:07+02:00"
         },
         {
           "title": "GraphQL API",
