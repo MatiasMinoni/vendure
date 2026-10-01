@@ -382,6 +382,42 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
             await as('adminA');
         });
 
+        // The deprecated assignRoleToAdministrator takes no channel and grants on the active
+        // one, so reaching another channel goes through its token or its administrators.
+        it('adminA uses assignRoleToAdministrator on token B', async () => {
+            const before = await assignmentsOf(admins.lowA.userId);
+            await as('adminA', B_TOKEN);
+            const r = await attempt(() =>
+                adminClient.query(assignRoleToAdministratorDocument, {
+                    administratorId: admins.lowA.id,
+                    roleId: roles.R1.id,
+                }),
+            );
+            record(S, 'legacy assignRoleToAdministrator on a channel without UpdateAdministrator', 'deny', r);
+            if (!r.ok) expect(r.message).toContain(FORBIDDEN);
+            expect(await assignmentsOf(admins.lowA.userId)).toEqual(before);
+            await as('adminA');
+        });
+
+        // Allowed today: the target is resolved globally, and the grant lands on A, where
+        // adminA holds R1. Master's target scoping would hide adminB (Questions d8, OSS-845).
+        it('adminA uses assignRoleToAdministrator on a B-only admin', async () => {
+            const r = await attempt(() =>
+                adminClient.query(assignRoleToAdministratorDocument, {
+                    administratorId: admins.adminB.id,
+                    roleId: roles.R1.id,
+                }),
+            );
+            const after = await assignmentsOf(admins.adminB.userId);
+            record(S, 'legacy assignRoleToAdministrator to a B-only admin', 'observe', r, `after=${after.join(',')}`);
+            if (r.ok) {
+                expect(after).toEqual([`R1@${A}`, `R2@${B}`].sort());
+                await superClient.query(removeRolesFromUserDocument, {
+                    input: { userId: admins.adminB.userId, assignments: [{ roleId: roles.R1.id, channelId: A }] },
+                });
+            }
+        });
+
         it('adminA createAdministrator with roleAssignments on B', async () => {
             const r = await attempt(() =>
                 adminClient.query(createAdministratorDocument, {
