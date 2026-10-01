@@ -390,14 +390,12 @@ describe('RoleAssignment', () => {
         });
 
         // The anchor row stands for Channels created after the grant too: no row is added, and
-        // a session opened before the Channel existed can act on it.
+        // a session opened before the Channel existed can act on it. secondSuperAdmin creates
+        // the Channel within that session.
         it('a channel created after the grant is administrable with no new row', async () => {
-            // Switching adminClient back logs secondSuperAdmin out, which ends all their
-            // sessions, so the live session is opened afterwards.
-            await asSuperAdminOnDefaultChannel();
-            const liveClient = new SimpleGraphQLClient(config as any, adminApiUrl);
-            await liveClient.asUserWithCredentials(secondSuperAdmin.emailAddress, 'test');
-
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            await adminClient.asUserWithCredentials(secondSuperAdmin.emailAddress, 'test');
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
             const { createChannel } = await adminClient.query(createChannelDocument, {
                 input: {
                     code: 'post-grant-channel',
@@ -414,8 +412,8 @@ describe('RoleAssignment', () => {
             const assignments = await getUserRoleAssignments(secondSuperAdmin.id);
             expect(assignments).toEqual([{ roleCode: SUPER_ADMIN_ROLE_CODE, channelId: DEFAULT_CHANNEL_ID }]);
 
-            liveClient.setChannelToken(createChannel.token);
-            const { createRole } = await liveClient.query(createRoleDocument, {
+            adminClient.setChannelToken(createChannel.token);
+            const { createRole } = await adminClient.query(createRoleDocument, {
                 input: { code: 'created-on-post-grant-channel', description: '', permissions: [] },
             });
             expect(createRole.code).toBe('created-on-post-grant-channel');
@@ -563,7 +561,7 @@ describe('RoleAssignment', () => {
                 `${SUPER_ADMIN_ROLE_CODE}@${DEFAULT_CHANNEL_ID}`,
             ]);
 
-            const keyClient = new SimpleGraphQLClient(config as any, adminApiUrl);
+            const keyClient = new SimpleGraphQLClient(config, adminApiUrl);
             (keyClient as any).headers[DEFAULT_APIKEY_HEADER_KEY] = createApiKey.apiKey;
             keyClient.setChannelToken(secondChannel.token);
             const { createRole } = await keyClient.query(createRoleDocument, {
