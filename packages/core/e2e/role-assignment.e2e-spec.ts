@@ -1,9 +1,5 @@
 import { CurrencyCode, DeletionResult, LanguageCode, Permission } from '@vendure/common/lib/generated-types';
-import {
-    DEFAULT_APIKEY_HEADER_KEY,
-    ROLE_EDITOR_ROLE_CODE,
-    SUPER_ADMIN_ROLE_CODE,
-} from '@vendure/common/lib/shared-constants';
+import { ROLE_EDITOR_ROLE_CODE, SUPER_ADMIN_ROLE_CODE } from '@vendure/common/lib/shared-constants';
 import { ID } from '@vendure/common/lib/shared-types';
 import { AdministratorEvent, EventBus, RoleAssignmentEvent, VendureEvent } from '@vendure/core';
 import {
@@ -11,7 +7,6 @@ import {
     createTestEnvironment,
     E2E_DEFAULT_CHANNEL_TOKEN,
     ErrorResultGuard,
-    SimpleGraphQLClient,
 } from '@vendure/testing';
 import path from 'path';
 import { Subscription } from 'rxjs';
@@ -43,10 +38,7 @@ import { assertThrowsWithMessage } from './utils/assert-throws-with-message';
  * the filtered assignment reads, the SuperAdmin anchor row, and the event contract.
  */
 describe('RoleAssignment', () => {
-    const config = testConfig();
-    config.authOptions.tokenMethod = ['bearer', 'api-key'];
-    const { server, adminClient } = createTestEnvironment(config);
-    const adminApiUrl = `http://localhost:${config.apiOptions.port}/${String(config.apiOptions.adminApiPath)}`;
+    const { server, adminClient } = createTestEnvironment(testConfig());
 
     const DEFAULT_CHANNEL_ID = 'T_1';
     type ChannelFragment = FragmentOf<typeof channelFragment>;
@@ -537,20 +529,16 @@ describe('RoleAssignment', () => {
         });
 
         // Pins current behaviour; whether an API key may hold SuperAdmin at all is still open
-        // (Questions d10). The key's User gets the anchor row and acts as SuperAdmin on every
-        // Channel, but the sole-SuperAdmin guard counts Administrators only, so the key does
-        // not stand in for the last SuperAdmin Administrator.
+        // (Questions d10). The key's User gets the anchor row, but the sole-SuperAdmin guard
+        // counts Administrators only, so the key does not stand in for the last SuperAdmin
+        // Administrator. A SuperAdmin key acting as SuperAdmin is covered by api-key.e2e-spec.
         it('an API key can hold SuperAdmin but does not count as a SuperAdmin holder', async () => {
-            // An ApiKey is only found on the Channels it belongs to, so it is created on
-            // second-channel (which also attaches it to the default channel).
-            adminClient.setChannelToken(secondChannel.token);
             const { createApiKey } = await adminClient.query(createApiKeyDocument, {
                 input: {
                     roleAssignments: [{ roleId: superAdminRoleId, channelId: secondChannel.id }],
                     translations: [{ languageCode: LanguageCode.en, name: 'SuperAdmin key' }],
                 },
             });
-            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
             const { apiKey } = await adminClient.query(apiKeyUserDocument, { id: createApiKey.entityId });
             if (!apiKey) throw new Error('Expected the SuperAdmin API key to exist');
 
@@ -560,14 +548,6 @@ describe('RoleAssignment', () => {
             expect(roleAssignments.items.map(item => `${item.role.code}@${item.channelId}`)).toEqual([
                 `${SUPER_ADMIN_ROLE_CODE}@${DEFAULT_CHANNEL_ID}`,
             ]);
-
-            const keyClient = new SimpleGraphQLClient(config, adminApiUrl);
-            (keyClient as any).headers[DEFAULT_APIKEY_HEADER_KEY] = createApiKey.apiKey;
-            keyClient.setChannelToken(secondChannel.token);
-            const { createRole } = await keyClient.query(createRoleDocument, {
-                input: { code: 'created-by-superadmin-key', description: '', permissions: [] },
-            });
-            expect(createRole.code).toBe('created-by-superadmin-key');
 
             const { activeAdministrator } = await adminClient.query(getActiveAdministratorDocument);
             if (!activeAdministrator) {
