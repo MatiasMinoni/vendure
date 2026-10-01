@@ -35,6 +35,7 @@ import {
     getProductListDocument,
     MeDocument,
     removeRolesFromUserDocument,
+    updateAdministratorDocument,
     updateProductDocument,
     updateRoleDocument,
 } from './graphql/shared-definitions';
@@ -921,7 +922,7 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
     describe('10. concurrent SuperAdmins (last)', () => {
         const S = '10-concurrent';
         const ROUNDS = 5;
-        type Holder = { client: SimpleGraphQLClient; userId: string; adminId: string };
+        type Holder = { client: SimpleGraphQLClient; userId: string; adminId: string; email: string };
         let survivor: Holder;
         let created = 0;
 
@@ -953,7 +954,16 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
             const client = new SimpleGraphQLClient(config as any, adminApiUrl);
             await client.asUserWithCredentials(email, PASSWORD);
             client.setChannelToken(A_TOKEN);
-            return { client, userId: createAdministrator.user.id, adminId: createAdministrator.id };
+            return { client, userId: createAdministrator.user.id, adminId: createAdministrator.id, email };
+        }
+
+        // asUserWithCredentials returns the login error result rather than throwing.
+        async function loginOrThrow(client: SimpleGraphQLClient, email: string) {
+            const result = await client.asUserWithCredentials(email, PASSWORD);
+            if (result.errorCode) {
+                throw new Error(`${String(result.errorCode)}: ${String(result.message)}`);
+            }
+            return result;
         }
 
         function survivorOf(pair: Holder[], holderIds: string[]): Holder {
@@ -969,6 +979,7 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
                 client: adminClient,
                 userId: administrators.items[0].user.id,
                 adminId: administrators.items[0].id,
+                email: 'superadmin',
             };
             expect(await superAdminHolderIds()).toEqual([survivor.userId]);
         });
@@ -1050,6 +1061,85 @@ describe('RoleAssignment security matrix (OSS-792)', () => {
                 { ok: true, value: null },
                 outcomes.join('; '),
             );
+        });
+
+        // A SuperAdmin deleted by another while logged in: the deletion removes their rows and
+        // evicts their cached sessions, so the live session holds nothing on its next request.
+        describe('deleted while logged in', () => {
+            let victim: Holder;
+
+            beforeAll(async () => {
+                victim = await addSuperAdmin();
+                await survivor.client.query(deleteAdministratorDocument, { id: victim.adminId });
+            });
+
+            it('the next request of the live session is denied', async () => {
+                const list = await attempt(() => victim.client.query(getAdministratorsDocument, {}));
+                const write = await attempt(() =>
+                    victim.client.query(updateProductDocument, { input: { id: productId, enabled: true } }),
+                );
+                record(S, 'deleted SuperAdmin: administrators', 'deny', list);
+                record(S, 'deleted SuperAdmin: updateProduct', 'deny', write);
+            });
+
+            it('a stale updateAdministrator submit is denied and writes nothing', async () => {
+                const r = await attempt(() =>
+                    victim.client.query(updateAdministratorDocument, {
+                        input: { id: victim.adminId, firstName: 'stale' },
+                    }),
+                );
+                const stored = await server.app
+                    .get(TransactionalConnection)
+                    .rawConnection.getRepository(Administrator)
+                    .findOneOrFail({ where: { id: victim.adminId.replace(/^T_/, '') } });
+                record(
+                    S,
+                    'deleted SuperAdmin: stale updateAdministrator',
+                    'deny',
+                    r,
+                    `firstName=${stored.firstName}`,
+                );
+                expect(stored.firstName).not.toBe('stale');
+            });
+
+            it('cannot log in again', async () => {
+                const client = new SimpleGraphQLClient(config as any, adminApiUrl);
+                const r = await attempt(() => loginOrThrow(client, victim.email));
+                record(S, 'deleted SuperAdmin: login', 'deny', r);
+            });
+        });
+
+        // SuperAdmin taken away rather than the Administrator deleted: the Administrator stays,
+        // so login works, but nothing past it does.
+        describe('SuperAdmin removed while logged in', () => {
+            let victim: Holder;
+
+            beforeAll(async () => {
+                victim = await addSuperAdmin();
+                await survivor.client.query(removeRolesFromUserDocument, {
+                    input: {
+                        userId: victim.userId,
+                        assignments: [{ roleId: superAdminRoleId, channelId: A }],
+                    },
+                });
+            });
+
+            it('the next request of the live session is denied', async () => {
+                const r = await attempt(() => victim.client.query(getAdministratorsDocument, {}));
+                record(S, 'removed SuperAdmin: administrators', 'deny', r);
+            });
+
+            it('can log in again but holds no permissions', async () => {
+                const client = new SimpleGraphQLClient(config as any, adminApiUrl);
+                const r = await attempt(() => loginOrThrow(client, victim.email));
+                record(S, 'removed SuperAdmin: login', 'allow', r);
+                client.setChannelToken(A_TOKEN);
+                const { me } = await client.query(MeDocument);
+                const permissions = (me?.channels ?? []).flatMap(c => c.permissions);
+                expect(permissions.filter(p => p !== Permission.Authenticated)).toEqual([]);
+                const list = await attempt(() => client.query(getAdministratorsDocument, {}));
+                record(S, 'removed SuperAdmin: administrators after login', 'deny', list);
+            });
         });
     });
 });
