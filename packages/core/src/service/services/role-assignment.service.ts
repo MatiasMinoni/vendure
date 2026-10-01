@@ -3,7 +3,7 @@ import { Permission } from '@vendure/common/lib/generated-types';
 import { DEFAULT_CHANNEL_CODE } from '@vendure/common/lib/shared-constants';
 import { ID, PaginatedList } from '@vendure/common/lib/shared-types';
 import { unique } from '@vendure/common/lib/unique';
-import { In, IsNull, LockNotSupportedOnGivenDriverError } from 'typeorm';
+import { In, IsNull, LockNotSupportedOnGivenDriverError, ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 
 import { RequestContext } from '../../api/common/request-context';
 import { RelationPaths } from '../../api/decorators/relations.decorator';
@@ -216,35 +216,54 @@ export class RoleAssignmentService {
      *
      * Takes a write lock on the SuperAdmin Role row before counting, held until the
      * surrounding transaction commits. Two SuperAdmins removing or deleting each other at
-     * the same time would otherwise both count two holders and leave none. Call it inside the
-     * transaction which performs the write. On SQLite the lock is not supported; SQLite
-     * serializes writes itself.
+     * the same time would otherwise both count two holders and leave none. The count is a
+     * locking read too: under REPEATABLE READ (the MySQL and MariaDB default) a plain read
+     * after the lock still sees the snapshot taken at the transaction's first read, so it
+     * would miss the other transaction's committed write. Call it inside the transaction
+     * which performs the write. On SQLite locks are not supported; SQLite serializes writes
+     * itself.
      *
      * @since 4.0.0
      */
     async isSoleSuperAdminHolder(ctx: RequestContext, userId: ID): Promise<boolean> {
         const superAdminRole = await this.roleService.getSuperAdminRole(ctx);
-        try {
-            await this.connection
+        await this.withLockIfSupported(
+            this.connection
                 .getRepository(ctx, Role)
                 .createQueryBuilder('role')
-                .setLock('pessimistic_write')
-                .where('role.id = :id', { id: superAdminRole.id })
-                .getOne();
+                .where('role.id = :id', { id: superAdminRole.id }),
+            'pessimistic_write',
+            qb => qb.getOne(),
+        );
+        const holders = await this.withLockIfSupported(
+            this.connection
+                .getRepository(ctx, Administrator)
+                .createQueryBuilder('administrator')
+                .innerJoin('administrator.user', 'user')
+                .innerJoin(RoleAssignment, 'assignment', 'assignment.userId = user.id')
+                .select('user.id', 'userId')
+                .where('assignment.roleId = :roleId', { roleId: superAdminRole.id })
+                .andWhere('administrator.deletedAt IS NULL'),
+            'pessimistic_read',
+            qb => qb.getRawMany<{ userId: ID }>(),
+        );
+        const holderIds = unique(holders.map(holder => holder.userId));
+        return holderIds.length === 1 && idsAreEqual(holderIds[0], userId);
+    }
+
+    private async withLockIfSupported<E extends ObjectLiteral, T>(
+        qb: SelectQueryBuilder<E>,
+        lockMode: 'pessimistic_read' | 'pessimistic_write',
+        run: (qb: SelectQueryBuilder<E>) => Promise<T>,
+    ): Promise<T> {
+        try {
+            return await run(qb.clone().setLock(lockMode));
         } catch (e) {
             if (!(e instanceof LockNotSupportedOnGivenDriverError)) {
                 throw e;
             }
+            return run(qb);
         }
-        const holderIds = await this.resolveUserIdsWithRole(ctx, superAdminRole.id);
-        if (!holderIds.some(id => idsAreEqual(id, userId))) {
-            return false;
-        }
-        const superAdmins = await this.connection.getRepository(ctx, Administrator).find({
-            relations: ['user'],
-            where: { deletedAt: IsNull(), user: { id: In(holderIds) } },
-        });
-        return superAdmins.length === 1 && idsAreEqual(superAdmins[0].user.id, userId);
     }
 
     /**
