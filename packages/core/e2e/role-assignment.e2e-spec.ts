@@ -21,6 +21,7 @@ import {
     assignRolesToUserDocument,
     createAdministratorDocument,
     createChannelDocument,
+    createCustomerDocument,
     createRoleDocument,
     deleteAdministratorDocument,
     getActiveAdministratorDocument,
@@ -601,6 +602,150 @@ describe('RoleAssignment', () => {
         });
     });
 
+    // OSS-792 findings 1 and 2 — assignRolesToUser and removeRolesFromUser accept only an
+    // Administrator, or the User of an ApiKey on the active channel under UpdateApiKey. A
+    // Customer's User, or another channel's API-key User, is reported as not found.
+    describe('assignment targets', () => {
+        let customerUserId: string;
+        let defaultChannelKeyUserId: string;
+        let secondChannelKeyUserId: string;
+
+        async function createApiKeyUser(channelToken: string, channelId: string, name: string) {
+            adminClient.setChannelToken(channelToken);
+            const { createApiKey } = await adminClient.query(createApiKeyDocument, {
+                input: {
+                    roleAssignments: [{ roleId: adminManagerRole.id, channelId }],
+                    translations: [{ languageCode: LanguageCode.en, name }],
+                },
+            });
+            const { apiKey } = await adminClient.query(apiKeyUserDocument, { id: createApiKey.entityId });
+            if (!apiKey) throw new Error(`Expected API key ${name} to exist`);
+            return apiKey.user.id;
+        }
+
+        beforeAll(async () => {
+            await asSuperAdminOnDefaultChannel();
+            const { createCustomer } = await adminClient.query(createCustomerDocument, {
+                input: { firstName: 'Target', lastName: 'Customer', emailAddress: 'target@customer.test' },
+                password: 'test',
+            });
+            if (!('id' in createCustomer) || !createCustomer.user) {
+                throw new Error('Expected the customer to be created with a User');
+            }
+            customerUserId = createCustomer.user.id;
+            defaultChannelKeyUserId = await createApiKeyUser(
+                E2E_DEFAULT_CHANNEL_TOKEN,
+                DEFAULT_CHANNEL_ID,
+                'Default channel key',
+            );
+            secondChannelKeyUserId = await createApiKeyUser(
+                secondChannel.token,
+                secondChannel.id,
+                'Second channel key',
+            );
+        });
+
+        it('a Customer User cannot be granted a Role', async () => {
+            await asSuperAdminOnDefaultChannel();
+            await assertThrowsWithMessage(async () => {
+                await adminClient.query(assignRolesToUserDocument, {
+                    input: {
+                        userId: customerUserId,
+                        assignments: [{ roleId: adminManagerRole.id, channelId: DEFAULT_CHANNEL_ID }],
+                    },
+                });
+            }, 'No User with the id')();
+
+            const { roleAssignments } = await adminClient.query(roleAssignmentsOfUserDocument, {
+                userId: customerUserId,
+            });
+            expect(roleAssignments.totalItems).toBe(0);
+        });
+
+        it('a Customer User cannot be the target of removeRolesFromUser', async () => {
+            await assertThrowsWithMessage(async () => {
+                await adminClient.query(removeRolesFromUserDocument, {
+                    input: {
+                        userId: customerUserId,
+                        assignments: [{ roleId: adminManagerRole.id, channelId: DEFAULT_CHANNEL_ID }],
+                    },
+                });
+            }, 'No User with the id')();
+        });
+
+        it('a soft-deleted Administrator cannot be granted a Role', async () => {
+            const { createAdministrator } = await adminClient.query(createAdministratorDocument, {
+                input: {
+                    firstName: 'Deleted',
+                    lastName: 'Target',
+                    emailAddress: 'deleted-target@test.com',
+                    password: 'test',
+                    roleAssignments: [],
+                },
+            });
+            await adminClient.query(deleteAdministratorDocument, { id: createAdministrator.id });
+
+            await assertThrowsWithMessage(async () => {
+                await adminClient.query(assignRolesToUserDocument, {
+                    input: {
+                        userId: createAdministrator.user.id,
+                        assignments: [{ roleId: adminManagerRole.id, channelId: DEFAULT_CHANNEL_ID }],
+                    },
+                });
+            }, 'No User with the id')();
+        });
+
+        it('an API-key User on another channel cannot be granted a Role', async () => {
+            // The key was created on the default channel only. Every ApiKey is also attached to
+            // the default channel, so the cross-channel case is probed from second-channel.
+            adminClient.setChannelToken(secondChannel.token);
+            await adminClient.asSuperAdmin();
+            adminClient.setChannelToken(secondChannel.token);
+            await assertThrowsWithMessage(async () => {
+                await adminClient.query(assignRolesToUserDocument, {
+                    input: {
+                        userId: defaultChannelKeyUserId,
+                        assignments: [{ roleId: adminManagerRole.id, channelId: secondChannel.id }],
+                    },
+                });
+            }, 'No User with the id')();
+        });
+
+        it('an API-key User on the active channel needs UpdateApiKey', async () => {
+            // channelAdmin holds UpdateAdministrator and the admin-manager Role's permissions on
+            // second-channel, but no ApiKey permission.
+            await asChannelAdminOnSecondChannel();
+            await assertThrowsWithMessage(async () => {
+                await adminClient.query(removeRolesFromUserDocument, {
+                    input: {
+                        userId: secondChannelKeyUserId,
+                        assignments: [{ roleId: adminManagerRole.id, channelId: secondChannel.id }],
+                    },
+                });
+            }, 'You are not currently authorized to perform this action')();
+        });
+
+        it('an API-key User on the active channel can be granted a Role with UpdateApiKey', async () => {
+            await asSuperAdminOnDefaultChannel();
+            await adminClient.query(assignRolesToUserDocument, {
+                input: {
+                    userId: defaultChannelKeyUserId,
+                    assignments: [{ roleId: roleEditorRoleId, channelId: DEFAULT_CHANNEL_ID }],
+                },
+            });
+
+            const { roleAssignments } = await adminClient.query(roleAssignmentsOfUserDocument, {
+                userId: defaultChannelKeyUserId,
+            });
+            expect(roleAssignments.items.map(item => `${item.role.code}@${item.channelId}`).sort()).toEqual(
+                [
+                    `${adminManagerRole.code}@${DEFAULT_CHANNEL_ID}`,
+                    `${ROLE_EDITOR_ROLE_CODE}@${DEFAULT_CHANNEL_ID}`,
+                ].sort(),
+            );
+        });
+    });
+
     // OSS-751 — the role-change event contract of the assignment model. RoleAssignmentEvent
     // (channel-scoped, keyed on the User) is emitted by every actor-made assignment write and
     // is the only role-change event: the legacy RoleChangeEvent was removed in v4.0.0.
@@ -1029,6 +1174,17 @@ const createApiKeyDocument = graphql(`
         createApiKey(input: $input) {
             apiKey
             entityId
+        }
+    }
+`);
+
+const apiKeyUserDocument = graphql(`
+    query ApiKeyUserForAssignmentTargets($id: ID!) {
+        apiKey(id: $id) {
+            id
+            user {
+                id
+            }
         }
     }
 `);
