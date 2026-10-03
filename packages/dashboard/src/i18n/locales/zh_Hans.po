@@ -5020,8 +5020,8 @@ msgid "Heading 3"
 msgstr "标题 3"
 
 #: src/lib/components/login/login-form.tsx
-msgid "Welcome to Vendure"
-msgstr "欢迎使用 Vendure"
+msgid "Welcome to ArgySolutions"
+msgstr "欢迎使用 ArgySolutions"
 
 #. js-lingui-explicit-id
 #: src/lib/framework/defaults.ts

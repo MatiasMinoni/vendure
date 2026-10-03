@@ -5020,8 +5020,8 @@ msgid "Heading 3"
 msgstr "سرفصل ۳"
 
 #: src/lib/components/login/login-form.tsx
-msgid "Welcome to Vendure"
-msgstr "به Vendure خوش آمدید"
+msgid "Welcome to ArgySolutions"
+msgstr "به ArgySolutions خوش آمدید"
 
 #. js-lingui-explicit-id
 #: src/lib/framework/defaults.ts
