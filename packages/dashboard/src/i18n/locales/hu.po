@@ -5007,8 +5007,8 @@ msgid "Heading 3"
 msgstr "3. fejléc"
 
 #: src/lib/components/login/login-form.tsx
-msgid "Welcome to Vendure"
-msgstr "Üdvözöljük a Vendure-ban"
+msgid "Welcome to ArgySolutions"
+msgstr "Üdvözöljük a ArgySolutions-ban"
 
 #. js-lingui-explicit-id
 #: src/lib/framework/defaults.ts

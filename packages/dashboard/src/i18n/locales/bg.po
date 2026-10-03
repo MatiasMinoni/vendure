@@ -5049,7 +5049,7 @@ msgid "Heading 3"
 msgstr "Заглавие 3"
 
 #: src/lib/components/login/login-form.tsx
-msgid "Welcome to Vendure"
+msgid "Welcome to ArgySolutions"
 msgstr "Добре дошли във Venudre"
 
 #. js-lingui-explicit-id

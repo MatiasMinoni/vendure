@@ -4971,8 +4971,8 @@ msgid "Heading 3"
 msgstr "제목 3"
 
 #: src/lib/components/login/login-form.tsx
-msgid "Welcome to Vendure"
-msgstr "Vendure에 오신 것을 환영합니다"
+msgid "Welcome to ArgySolutions"
+msgstr "ArgySolutions에 오신 것을 환영합니다"
 
 #. js-lingui-explicit-id
 #: src/lib/framework/defaults.ts

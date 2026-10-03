@@ -5015,8 +5015,8 @@ msgid "Heading 3"
 msgstr "Kop 3"
 
 #: src/lib/components/login/login-form.tsx
-msgid "Welcome to Vendure"
-msgstr "Welkom bij Vendure"
+msgid "Welcome to ArgySolutions"
+msgstr "Welkom bij ArgySolutions"
 
 #. js-lingui-explicit-id
 #: src/lib/framework/defaults.ts

@@ -4864,8 +4864,8 @@ msgid "Heading 3"
 msgstr "Heading 3"
 
 #: src/lib/components/login/login-form.tsx
-msgid "Welcome to Vendure"
-msgstr "Bun venit la Vendure"
+msgid "Welcome to ArgySolutions"
+msgstr "Bun venit la ArgySolutions"
 
 #. js-lingui-explicit-id
 #: src/lib/framework/defaults.ts
