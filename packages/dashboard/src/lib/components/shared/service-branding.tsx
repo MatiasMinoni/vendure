@@ -17,4 +17,3 @@ export function ServiceLoginWelcome() {
 export function ServiceToolbarWordmark() {
   return <span className="hidden text-sm font-semibold text-primary sm:inline">ArgySolutions</span>;
 }
-
