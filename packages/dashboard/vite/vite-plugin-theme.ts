@@ -57,7 +57,9 @@ export interface DashboardThemeOptions extends ThemeVariables {
 const dashboardLightExtensions: ThemeColors = {
     'dev-mode': brand[400],
     'dev-mode-foreground': brand[950],
-    brand: brand[500],
+    primary: '#244c3b',
+    'primary-foreground': '#ffffff',
+    brand: '#244c3b',
     'brand-lighter': brand[300],
     'brand-darker': brand[700],
     'font-sans': fontFamily.sans,
@@ -69,7 +71,9 @@ const dashboardLightExtensions: ThemeColors = {
 const dashboardDarkExtensions: ThemeColors = {
     'dev-mode': brand[400],
     'dev-mode-foreground': brand[950],
-    brand: brand[500],
+    primary: '#94c9ad',
+    'primary-foreground': '#10271c',
+    brand: '#94c9ad',
     'brand-lighter': brand[50],
     'brand-darker': brand[700],
     'font-sans': fontFamily.sans,

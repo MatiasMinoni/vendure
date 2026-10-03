@@ -10,7 +10,7 @@ import * as React from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from '@/vdb/components/ui/sonner.js';
 import { useLoginExtensions } from '../../framework/extension-api/use-login-extensions.js';
-import { LogoMark } from '../shared/logo-mark.js';
+import { ServiceLoginWelcome, ServiceLoginWordmark } from '../shared/service-branding.js';
 import { Form } from '../ui/form.js';
 import { Field, FieldError } from '../ui/field.js';
 import { Separator } from '../ui/separator.js';
@@ -51,7 +51,7 @@ export function LoginForm({ className, onFormSubmit, isVerifying, loginError, ..
             {loginExtensions.logo ? (
                 <loginExtensions.logo.component />
             ) : (
-                <LogoMark className="text-primary h-8 w-auto" />
+                <ServiceLoginWordmark />
             )}
             <Card className="w-full">
                 <CardContent className="pt-6">
@@ -65,14 +65,7 @@ export function LoginForm({ className, onFormSubmit, isVerifying, loginError, ..
                                     <loginExtensions.beforeForm.component />
                                 </div>
                             ) : (
-                                <div className="flex flex-col items-center text-center gap-2">
-                                    <h1 className="text-2xl font-semibold tracking-tight">
-                                        <Trans>Welcome to Vendure</Trans>
-                                    </h1>
-                                    <p className="text-sm text-muted-foreground">
-                                        <Trans>Sign in to access the admin dashboard</Trans>
-                                    </p>
-                                </div>
+                                <ServiceLoginWelcome />
                             )}
                             <div className="grid gap-4 w-full">
                                 <Controller

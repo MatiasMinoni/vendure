@@ -1,3 +1,4 @@
+import { ServiceToolbarWordmark } from '../shared/service-branding.js';
 import { AppSidebar } from '@/vdb/components/layout/app-sidebar.js';
 import { DevModeIndicator } from '@/vdb/components/layout/dev-mode-indicator.js';
 import { GeneratedBreadcrumbs } from '@/vdb/components/layout/generated-breadcrumbs.js';
@@ -82,6 +83,11 @@ function ToolbarItems() {
     const extensionItems = Array.from(getToolbarItemRegistry().values());
 
     const builtinItems: BuiltInToolbarItem[] = [
+        {
+            id: 'argysolutions-service-brand',
+            component: ServiceToolbarWordmark,
+            shouldRender: !extensionItems.some(item => item.id === 'argysolutions-service-brand'),
+        },
         {
             id: 'dev-mode-indicator',
             component: DevModeIndicator,
