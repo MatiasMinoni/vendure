@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 const dashboardDirectory = fileURLToPath(new URL('../', import.meta.url));
 const repositoryDirectory = path.resolve(dashboardDirectory, '../..');
 const outputDirectory = path.join(repositoryDirectory, 'artifacts/argysolutions');
+const packageScope = process.argv[2];
+if (!packageScope || !/^[a-z0-9][a-z0-9_-]*$/.test(packageScope)) {
+    throw new Error('ArgySolutions package scope required: pass your confirmed npm username without @');
+}
+const packageName = `@${packageScope}/vendure-dashboard`;
 const packageVersion = '3.7.3-argysolutions.1';
 const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: repositoryDirectory, encoding: 'utf8',
@@ -23,9 +28,10 @@ try {
     }
     await cp(path.join(repositoryDirectory, 'LICENSE.md'), path.join(stagingDirectory, 'LICENSE.md'));
     await cp(path.join(repositoryDirectory, 'license'), path.join(stagingDirectory, 'license'), { recursive: true });
-    await cp(path.join(dashboardDirectory, 'README.argysolutions.md'), path.join(stagingDirectory, 'README.md'));
+    const readme = await readFile(path.join(dashboardDirectory, 'README.argysolutions.md'), 'utf8');
+    await writeFile(path.join(stagingDirectory, 'README.md'), readme.replaceAll('@argysolutions/vendure-dashboard', packageName));
     const manifest = JSON.parse(await readFile(path.join(dashboardDirectory, 'package.json'), 'utf8'));
-    manifest.name = '@argysolutions/vendure-dashboard';
+    manifest.name = packageName;
     manifest.version = packageVersion;
     manifest.description = 'ArgySolutions dashboard branding for Vendure 3.7.3';
     manifest.license = 'GPL-3.0-or-later';
