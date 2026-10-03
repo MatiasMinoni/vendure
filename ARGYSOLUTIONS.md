@@ -21,3 +21,33 @@ Follow the upstream development/build instructions when producing packages from 
 The dashboard was built with Vite 7.3.6 using the ecommerce application's compatible installed dependencies and the fork's dashboard source and theme plugin. The local branding extension was disabled for this verification to exercise the fork defaults. Strict TypeScript checks passed for the service branding and theme modules.
 
 Chrome verification against a local demo backend passed for login, primary color, desktop/mobile layout, authenticated toolbar, administrators, roles and customers, with no JavaScript errors. This is scoped dashboard verification, not the entire Vendure monorepo test suite or a clean package-release build.
+
+## Preparing the npm package
+
+The release package is named `@argysolutions/vendure-dashboard`, version `3.7.3-argysolutions.1`. Public publication requires an authenticated npm account with write permission to that scope. No credentials are stored here.
+
+After installing the upstream workspace dependencies, build and package from `packages/dashboard`:
+
+```sh
+npx tsc -p tsconfig.vite.json --rootDir vite
+npx tsc -p tsconfig.plugin.json --rootDir plugin
+node scripts/build-plugin.js
+npm run build:lib
+node scripts/pack-argysolutions.mjs
+```
+
+Use the upstream TypeScript 5.8.2 compiler for these release builds. The explicit GraphQL `DocumentNode` annotation makes plugin declarations portable across pnpm dependency paths. The packaging script adds the directly imported `@gql.tada/cli-utils` dependency, includes the license files, and writes the tarball and file manifest to `artifacts/argysolutions/`.
+
+Review and publish the exact tested tarball from the repository root:
+
+```sh
+npm publish artifacts/argysolutions/argysolutions-vendure-dashboard-3.7.3-argysolutions.1.tgz --access public --tag latest
+```
+
+The `latest` tag is intentional for the independently versioned fork. Installation uses the original dependency key:
+
+```sh
+npm install --save-exact @vendure/dashboard@npm:@argysolutions/vendure-dashboard@3.7.3-argysolutions.1
+```
+
+The commands targeting the registry will only work after publication. Until then, the tarball can be installed under `@vendure/dashboard` using a `file:` dependency in `package.json`.
